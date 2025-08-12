@@ -66,4 +66,14 @@ logo = Image.open("spm_logo.png")  # Make sure this file is in your GitHub repo
 st.image(logo, width=200)
 st.markdown("<h1 style='text-align: center; color: green;'>SPM Soccer Price Monitor – AI Agent</h1>", unsafe_allow_html=True)
 st.markdown("<h4 style='text-align: center;'>Top 5 Over 2.5 Picks</h4>", unsafe_allow_html=True)
+# After your filtering and selecting top 5 picks
+st.dataframe(result)  # <-- This shows the table to the user
 
+# Then add this to enable CSV download
+csv = result.to_csv(index=False).encode('utf-8')
+st.download_button(
+    label="📥 Download Picks as CSV",
+    data=csv,
+    file_name="SPM_Top5_Over25_Picks.csv",
+    mime="text/csv"
+)
