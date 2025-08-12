@@ -59,3 +59,10 @@ if uploaded_file is not None:
 
     except Exception as e:
         st.error(f"Error processing file: {e}")
+
+# Load and display logo
+logo = Image.open("spm_logo.png")  # Make sure this file is in your GitHub repo
+st.image(logo, width=200)
+st.markdown("<h1 style='text-align: center; color: green;'>SPM Soccer Price Monitor – AI Agent</h1>", unsafe_allow_html=True)
+st.markdown("<h4 style='text-align: center;'>Top 5 Over 2.5 Picks</h4>", unsafe_allow_html=True)
+
