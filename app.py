@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
+from PIL import Image
 
 st.title("📊 SPM Top 5 Over 2.5 Picks (Liquidity ≥ 500 in Column AB)")
 
