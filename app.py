@@ -66,14 +66,21 @@ logo = Image.open("spm_logo.png")  # Make sure this file is in your GitHub repo
 st.image(logo, width=200)
 st.markdown("<h1 style='text-align: center; color: green;'>SPM Soccer Price Monitor – AI Agent</h1>", unsafe_allow_html=True)
 st.markdown("<h4 style='text-align: center;'>Top 5 Over 2.5 Picks</h4>", unsafe_allow_html=True)
-# After your filtering and selecting top 5 picks
-st.dataframe(result)  # <-- This shows the table to the user
+if uploaded_file:
+    df = pd.read_excel(uploaded_file, sheet_name="Matches")
+    # Apply your Over 2.5 and liquidity filters here
+    filtered_df = df[(df["O2.5 Prob"] >= 0.6) & (df["AB"] >= 500)]
+    result = filtered_df.sort_values(by="O2.5 Prob", ascending=False).head(5)
 
-# Then add this to enable CSV download
-csv = result.to_csv(index=False).encode('utf-8')
-st.download_button(
-    label="📥 Download Picks as CSV",
-    data=csv,
-    file_name="SPM_Top5_Over25_Picks.csv",
-    mime="text/csv"
-)
+    # Show table
+    st.dataframe(result)
+
+    # Download button
+    csv = result.to_csv(index=False).encode('utf-8')
+    st.download_button(
+        label="📥 Download Picks as CSV",
+        data=csv,
+        file_name="SPM_Top5_Over25_Picks.csv",
+        mime="text/csv"
+    )
+
