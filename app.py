@@ -69,8 +69,8 @@ st.markdown("<h4 style='text-align: center;'>Top 5 Over 2.5 Picks</h4>", unsafe_
 if uploaded_file:
     df = pd.read_excel(uploaded_file, sheet_name="Matches")
     # Apply your Over 2.5 and liquidity filters here
-    filtered_df = df[(df["O2.5 Prob"] >= 0.6) & (df["AB"] >= 500)]
-    result = filtered_df.sort_values(by="O2.5 Prob", ascending=False).head(5)
+    filtered_df = df[(df["o25_odds"] >= 0.6) & (df["liq"] >= 500)]
+    result = filtered_df.sort_values(by="p_market", ascending=False).head(5)
 
     # Show table
     st.dataframe(result)
