@@ -3,84 +3,272 @@ import pandas as pd
 import numpy as np
 from PIL import Image
 
-st.title("📊 SPM Top 5 Over 2.5 Picks (Liquidity ≥ 500 in Column AB)")
+# =========================
+# Branding
+# =========================
+try:
+    st.image(Image.open("spm_logo.png"), width=180)
+except Exception:
+    pass
 
-uploaded_file = st.file_uploader("Upload your SPM Excel file", type=["xlsx"])
+st.markdown(
+    "<h1 style='text-align:center;color:green;'>SPM Tips – Soccer Price Monitor • AI Agent</h1>",
+    unsafe_allow_html=True,
+)
+st.write("Upload your SPM Excel and pick a strategy to generate tips.")
 
-def poisson_o25_prob_from_lambda(lam):
-    p0 = np.exp(-lam)
-    p1 = p0 * lam
-    p2 = p1 * lam / 2.0
-    return 1.0 - (p0 + p1 + p2)
+# =========================
+# Helpers
+# =========================
+def excel_col_to_idx(col_letters: str) -> int:
+    """Excel letters -> 0-based index (e.g., AB -> 27)."""
+    s = 0
+    for ch in col_letters.upper():
+        s = s * 26 + (ord(ch) - 64)
+    return s - 1
 
-if uploaded_file is not None:
-    try:
-        df = pd.read_excel(uploaded_file, sheet_name="Matches")
+def pick_col(df, candidates):
+    """Find first matching column name (case-insensitive)."""
+    lower = {c.lower(): c for c in df.columns}
+    for c in candidates:
+        if c.lower() in lower:
+            return lower[c.lower()]
+    return None
 
-        # Column mappings
-        col_home = "Home"
-        col_away = "Away"
-        col_country = "Country"
-        col_date = "Date"
-        col_time = "Time"
-        col_odds = "O2.5 Back(T0)"
-        col_lam = "Total Goals"
-        col_liq = df.columns[27]  # Column AB
+def to_num(series):
+    return pd.to_numeric(series, errors="coerce")
 
-        # Process
-        df["o25_odds"] = pd.to_numeric(df[col_odds], errors="coerce")
-        df["lam"] = pd.to_numeric(df[col_lam], errors="coerce")
-        df["liq"] = pd.to_numeric(df[col_liq], errors="coerce")
+def add_kickoff(frame, col_date, col_time):
+    if col_date and col_time:
+        frame["Kickoff"] = pd.to_datetime(
+            frame[col_date].astype(str) + " " + frame[col_time].astype(str),
+            errors="coerce",
+        )
+    else:
+        frame["Kickoff"] = pd.NaT
+    return frame
 
-        df = df.dropna(subset=["o25_odds", "lam", "liq"])
-        df = df[(df["o25_odds"] >= 1.60) & (df["o25_odds"] <= 2.60)]
-        df = df[df["liq"] >= 500]
+# =========================
+# Upload
+# =========================
+uploaded = st.file_uploader("Upload your SPM Excel (.xlsx)", type=["xlsx"])
+if not uploaded:
+    st.stop()
 
-        # Calculate probabilities & edge
-        df["p_model"] = poisson_o25_prob_from_lambda(df["lam"])
-        df["p_market"] = 1.0 / df["o25_odds"]
-        df["edge"] = df["p_model"] - df["p_market"]
-        df["Edge_%"] = (df["edge"] * 100).round(1)
+try:
+    df = pd.read_excel(uploaded, sheet_name="Matches")
+except Exception as e:
+    st.error(f"Could not open sheet **Matches**: {e}")
+    st.stop()
 
-        # Create kickoff datetime
-        df["Kickoff"] = pd.to_datetime(
-            df[col_date].astype(str) + " " + df[col_time].astype(str),
-            errors="coerce"
+df.columns = df.columns.astype(str).str.strip()
+
+with st.expander("Detected columns in your sheet"):
+    st.write(df.columns.tolist())
+
+# Common display columns (optional)
+col_home    = pick_col(df, ["Home", "Home Team"])
+col_away    = pick_col(df, ["Away", "Away Team"])
+col_country = pick_col(df, ["Country", "League", "Competition"])
+col_date    = pick_col(df, ["Date"])
+col_time    = pick_col(df, ["Time"])
+
+# =========================
+# Tabs (Strategies)
+# =========================
+tab1, tab2 = st.tabs(["⚽ Over 2.5 Tips", "🏠 Home Fav Tips"])
+
+# --------------------------------------------------------------------
+# TAB 1: Over 2.5 Tips
+# Rules: BQ ≥ 60, AB ≥ 500 (AUD), BP ≥ 2.5
+# Columns by Excel letter:
+#   AB = Volume, BP = Combined GS+GC, BQ = Combined 2.5
+# --------------------------------------------------------------------
+with tab1:
+    st.subheader("Over 2.5 Tips (BQ ≥ 60, AB ≥ 500, BP ≥ 2.5)")
+
+    IDX_AB = excel_col_to_idx("AB")
+    IDX_BP = excel_col_to_idx("BP")
+    IDX_BQ = excel_col_to_idx("BQ")
+
+    max_needed = max(IDX_AB, IDX_BP, IDX_BQ)
+    if len(df.columns) <= max_needed:
+        st.error("Not enough columns for AB / BP / BQ. Please export the full SPM file.")
+    else:
+        col_AB = df.columns[IDX_AB]  # Volume (AUD)
+        col_BP = df.columns[IDX_BP]  # Combined GS+GC
+        col_BQ = df.columns[IDX_BQ]  # Combined 2.5
+
+        work = df.copy()
+        work["Volume_AB"]     = to_num(work[col_AB])
+        work["GS_GC_BP"]      = to_num(work[col_BP])
+        work["Combined25_BQ"] = to_num(work[col_BQ])
+
+        # If BQ looks like 0–1, convert to %
+        if work["Combined25_BQ"].median(skipna=True) <= 1:
+            work["Combined25_BQ"] *= 100.0
+
+        # Apply your rules
+        filt = (
+            (work["Combined25_BQ"] >= 60.0) &
+            (work["Volume_AB"] >= 500.0) &
+            (work["GS_GC_BP"] >= 2.5)
+        )
+        tips = work.loc[filt].copy()
+        tips = add_kickoff(tips, col_date, col_time)
+
+        # Optional odds column to show if present
+        col_odds_o25 = pick_col(df, ["O2.5 Back(T0)", "Over 2.5 Back", "Over2.5 Back"])
+
+        show_cols = []
+        if col_country: show_cols.append(col_country)
+        show_cols += ["Kickoff"]
+        if col_home: show_cols.append(col_home)
+        if col_away: show_cols.append(col_away)
+        if col_odds_o25: show_cols.append(col_odds_o25)
+        show_cols += ["Combined25_BQ", "GS_GC_BP", "Volume_AB"]
+
+        if tips.empty:
+            st.warning("No matches met the Over 2.5 rules.")
+        else:
+            tips = tips.sort_values("Combined25_BQ", ascending=False).reset_index(drop=True)
+            top = tips.head(5)
+            st.success(f"SPM Tips (Over 2.5) — Top {len(top)}")
+            st.dataframe(top[show_cols])
+
+            # Per‑tab CSV
+            csv1 = top[show_cols].to_csv(index=False).encode("utf-8")
+            st.download_button(
+                "📥 Download Over 2.5 SPM Tips (CSV)",
+                data=csv1,
+                file_name="SPM_Tips_Over25.csv",
+                mime="text/csv",
+                key="dl_over25_csv",
+            )
+
+            # Save for combined download
+            st.session_state["tips_over25"] = top[show_cols].assign(Strategy="Over 2.5")
+
+# --------------------------------------------------------------------
+# TAB 2: Home Fav Tips
+# Your rules (AUD only for W):
+# 1) Home Fav Odds (home odds) between 2.00 and 5.00
+# 2) Number of home games (BU) > 5
+# 3) Match Volume (W) ≥ 5,000 AUD
+# 4) Predictions: BY ≥ 45%, BZ ≥ 45%, CA ≥ 10%
+# 5) Attacking Potential (CE) ≥ 60
+# 6) Wins The Game (CO) ≥ 60
+# --------------------------------------------------------------------
+with tab2:
+    st.subheader("Home Fav Tips (6 Rules • AUD)")
+
+    col_home_odds = pick_col(df, ["Home Back(T0)", "Home Odds", "Home Back(TO)", "Home Back"])
+
+    IDX_W  = excel_col_to_idx("W")   # Match Volume (AUD)
+    IDX_BU = excel_col_to_idx("BU")  # # home games
+    IDX_BY = excel_col_to_idx("BY")  # Prediction %
+    IDX_BZ = excel_col_to_idx("BZ")  # Prediction %
+    IDX_CA = excel_col_to_idx("CA")  # Prediction %
+    IDX_CE = excel_col_to_idx("CE")  # Attacking potential
+    IDX_CO = excel_col_to_idx("CO")  # Wins The Game
+
+    need = max(IDX_W, IDX_BU, IDX_BY, IDX_BZ, IDX_CA, IDX_CE, IDX_CO)
+    if len(df.columns) <= need:
+        st.error("Not enough columns for W / BU / BY / BZ / CA / CE / CO.")
+    else:
+        col_W  = df.columns[IDX_W]
+        col_BU = df.columns[IDX_BU]
+        col_BY = df.columns[IDX_BY]
+        col_BZ = df.columns[IDX_BZ]
+        col_CA = df.columns[IDX_CA]
+        col_CE = df.columns[IDX_CE]
+        col_CO = df.columns[IDX_CO]
+
+        work2 = df.copy()
+        work2["HomeOdds"]     = to_num(work2[col_home_odds]) if col_home_odds else np.nan
+        work2["HomeGames_BU"] = to_num(work2[col_BU])
+        work2["MatchVol_W"]   = to_num(work2[col_W])
+        work2["Pred_BY"]      = to_num(work2[col_BY])
+        work2["Pred_BZ"]      = to_num(work2[col_BZ])
+        work2["Pred_CA"]      = to_num(work2[col_CA])
+        work2["Attack_CE"]    = to_num(work2[col_CE])
+        work2["WinsGame_CO"]  = to_num(work2[col_CO])
+
+        # Normalize predictions to % if 0–1
+        for pcol in ["Pred_BY", "Pred_BZ", "Pred_CA"]:
+            if work2[pcol].median(skipna=True) <= 1:
+                work2[pcol] *= 100.0
+
+        work2 = add_kickoff(work2, col_date, col_time)
+
+        mask = (
+            (work2["HomeOdds"].between(2.00, 5.00, inclusive="both") if col_home_odds else True) &
+            (work2["HomeGames_BU"] > 5) &
+            (work2["MatchVol_W"] >= 5000.0) &
+            (work2["Pred_BY"] >= 45.0) &
+            (work2["Pred_BZ"] >= 45.0) &
+            (work2["Pred_CA"] >= 10.0) &
+            (work2["Attack_CE"] >= 60.0) &
+            (work2["WinsGame_CO"] >= 60.0)
         )
 
-        # Get top 5
-        result = df.sort_values(by="edge", ascending=False).head(5)
-        result = result[
-            [col_country, "Kickoff", col_home, col_away, "o25_odds",
-             "p_model", "p_market", "Edge_%", "liq"]
+        tips2 = work2.loc[mask].copy()
+
+        show2 = []
+        if col_country: show2.append(col_country)
+        show2 += ["Kickoff"]
+        if col_home: show2.append(col_home)
+        if col_away: show2.append(col_away)
+        if col_home_odds: show2.append("HomeOdds")
+        show2 += [
+            "HomeGames_BU", "MatchVol_W", "Pred_BY", "Pred_BZ", "Pred_CA",
+            "Attack_CE", "WinsGame_CO",
         ]
 
-        st.success(f"Found {len(result)} picks")
-        st.dataframe(result)
+        if tips2.empty:
+            st.warning("No matches met the Home Fav rules.")
+        else:
+            # Sort by strongest signal first (BY, BZ, then volume)
+            tips2 = tips2.sort_values(["Pred_BY", "Pred_BZ", "MatchVol_W"], ascending=False).reset_index(drop=True)
+            top2 = tips2.head(10)
+            st.success(f"SPM Tips (Home Fav) — Top {len(top2)}")
+            st.dataframe(top2[show2])
 
-    except Exception as e:
-        st.error(f"Error processing file: {e}")
+            # Per‑tab CSV
+            csv2 = top2[show2].to_csv(index=False).encode("utf-8")
+            st.download_button(
+                "📥 Download Home Fav SPM Tips (CSV)",
+                data=csv2,
+                file_name="SPM_Tips_HomeFav.csv",
+                mime="text/csv",
+                key="dl_homefav_csv",
+            )
 
-# Load and display logo
-logo = Image.open("spm_logo.png")  # Make sure this file is in your GitHub repo
-st.image(logo, width=200)
-st.markdown("<h1 style='text-align: center; color: green;'>SPM Soccer Price Monitor – AI Agent</h1>", unsafe_allow_html=True)
-st.markdown("<h4 style='text-align: center;'>Top 5 Over 2.5 Picks</h4>", unsafe_allow_html=True)
-if uploaded_file:
-    df = pd.read_excel(uploaded_file, sheet_name="Matches")
-    # Apply your Over 2.5 and liquidity filters here
-    filtered_df = df[(df["o25_odds"] >= 0.6) & (df["liq"] >= 500)]
-    result = filtered_df.sort_values(by="p_market", ascending=False).head(5)
+            # Save for combined download
+            st.session_state["tips_homefav"] = top2[show2].assign(Strategy="Home Fav")
 
-    # Show table
-    st.dataframe(result)
+# =========================
+# Combined Download
+# =========================
+st.markdown("---")
+st.subheader("📦 Download All SPM Tips (Combined)")
 
-    # Download button
-    csv = result.to_csv(index=False).encode('utf-8')
+dfs = []
+if "tips_over25" in st.session_state:
+    dfs.append(st.session_state["tips_over25"])
+if "tips_homefav" in st.session_state:
+    dfs.append(st.session_state["tips_homefav"])
+
+if dfs:
+    combined = pd.concat(dfs, ignore_index=True)
+    csv_all = combined.to_csv(index=False).encode("utf-8")
     st.download_button(
-        label="📥 Download Picks as CSV",
-        data=csv,
-        file_name="SPM_Top5_Over25_Picks.csv",
-        mime="text/csv"
+        label="📥 Download SPM Tips – All Strategies (CSV)",
+        data=csv_all,
+        file_name="SPM_Tips_All_Strategies.csv",
+        mime="text/csv",
+        key="dl_all_csv",
     )
-
+    st.dataframe(combined)  # optional preview
+else:
+    st.info("Generate tips in the tabs above to enable the combined download.")
