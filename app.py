@@ -131,8 +131,9 @@ with tab1:
         if tips.empty:
             st.warning("No matches met the Over 2.5 rules.")
         else:
-            tips = tips.sort_values("Combined25_BQ", ascending=False).reset_index(drop=True)
-            top = tips.head(5)
+           top_n = st.slider("How many tips to show?", 5, 50, 10)  # default 10
+           tips = tips.sort_values("Combined25_BQ", ascending=False).reset_index(drop=True)
+           top = tips.head(top_n)
             st.success(f"SPM Tips (Over 2.5) — Top {len(top)}")
             st.dataframe(top[show_cols])
 
