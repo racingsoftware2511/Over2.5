@@ -131,9 +131,11 @@ with tab1:
         if tips.empty:
             st.warning("No matches met the Over 2.5 rules.")
         else:
-           top_n = st.slider("How many tips to show?", 5, 50, 10)  # default 10
-           tips = tips.sort_values("Combined25_BQ", ascending=False).reset_index(drop=True)
-           top = tips.head(top_n)
+            # --- Top‑N slider + clean sort ---
+            tips = tips.sort_values("Combined25_BQ", ascending=False).reset_index(drop=True)
+            top_n = st.slider("How many tips to show?", 5, 50, 10)  # default 10
+            top = tips.head(top_n)
+
             st.success(f"SPM Tips (Over 2.5) — Top {len(top)}")
             st.dataframe(top[show_cols])
 
@@ -149,7 +151,6 @@ with tab1:
 
             # Save for combined download
             st.session_state["tips_over25"] = top[show_cols].assign(Strategy="Over 2.5")
-
 # --------------------------------------------------------------------
 # TAB 2: Home Fav Tips
 # Your rules (AUD only for W):
