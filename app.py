@@ -138,7 +138,7 @@ with tab1:
             top = tips.head(top_n)
 
             st.success(f"SPM Tips (Over 2.5) — Top {len(top)}")
-            st.dataframe(top[show_cols], use_container_width=True, height=600)
+            st.dataframe(top[show_cols], use_container_width=True, height=500)
 
             # Per‑tab CSV
             csv1 = top[show_cols].to_csv(index=False).encode("utf-8")
