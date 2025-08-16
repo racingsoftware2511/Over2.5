@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 from PIL import Image
+st.set_page_config(layout="wide")   # ✅ Add this line here
 
 # =========================
 # Branding
@@ -137,7 +138,7 @@ with tab1:
             top = tips.head(top_n)
 
             st.success(f"SPM Tips (Over 2.5) — Top {len(top)}")
-            st.dataframe(top[show_cols])
+            st.dataframe(top[show_cols], use_container_width=True, height=600)
 
             # Per‑tab CSV
             csv1 = top[show_cols].to_csv(index=False).encode("utf-8")
