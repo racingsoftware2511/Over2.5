@@ -101,16 +101,19 @@ tab1, tab2 = st.tabs(["⚽ Over 2.5 Tips", "🏠 Home Fav Tips"])
 
 # --------------------------------------------------------------------
 # TAB 1: Over 2.5 Tips
-# Rules: BQ ≥ 60, AB ≥ 500 (AUD), BP ≥ 2.5
+# Rules: BQ ≥ 60, AB ≥ 500 (AUD), BP ≥ 2.5, and NEW: min(CI, CJ) ≥ 35
 # Columns by Excel letter:
 #   AB = Volume, BP = Combined GS+GC, BQ = Combined 2.5
+#   CI = Poisson share (H), CJ = Poisson share (A)
 # --------------------------------------------------------------------
 with tab1:
-    st.subheader("Over 2.5 Tips (BQ ≥ 60, AB ≥ 500, BP ≥ 2.5)")
+    st.subheader("Over 2.5 Tips (BQ ≥ 60, AB ≥ 500, BP ≥ 2.5, Poisson balance ≥ 35)")
 
     IDX_AB = excel_col_to_idx("AB")
     IDX_BP = excel_col_to_idx("BP")
     IDX_BQ = excel_col_to_idx("BQ")
+    IDX_CI = excel_col_to_idx("CI")
+    IDX_CJ = excel_col_to_idx("CJ")
 
     max_needed = max(IDX_AB, IDX_BP, IDX_BQ)
     if len(df.columns) <= max_needed:
@@ -120,16 +123,35 @@ with tab1:
         col_BP = df.columns[IDX_BP]  # Combined GS+GC
         col_BQ = df.columns[IDX_BQ]  # Combined 2.5
 
+        # Try to resolve Poisson share columns (safe if absent)
+        try:
+            col_CI = df.columns[IDX_CI]
+            col_CJ = df.columns[IDX_CJ]
+            have_poi = True
+        except Exception:
+            col_CI = col_CJ = None
+            have_poi = False
+
         work = df.copy()
         work["Volume_AB"]     = to_num(work[col_AB])
         work["GS_GC_BP"]      = to_num(work[col_BP])
-        work["Combined25_BQ"] = normalize_pct(work[col_BQ])  # <-- normalized robustly
+        work["Combined25_BQ"] = normalize_pct(work[col_BQ])  # robust 0–100
 
-        # Apply your rules
+        # NEW: Poisson balance = min(CI, CJ) in 0–100 shares
+        if have_poi:
+            work["poi_h"] = to_num(work[col_CI])
+            work["poi_a"] = to_num(work[col_CJ])
+            work["poi_balance"] = pd.concat([work["poi_h"], work["poi_a"]], axis=1).min(axis=1)
+        else:
+            work["poi_balance"] = np.nan
+            st.warning("Poisson share columns CI/CJ not found — Poisson balance filter skipped.", icon="⚠️")
+
+        # Apply your rules (+ Poisson balance when available)
         filt = (
             (work["Combined25_BQ"] >= 60.0) &
             (work["Volume_AB"] >= 500.0) &
-            (work["GS_GC_BP"] >= 2.5)
+            (work["GS_GC_BP"] >= 2.5) &
+            ( (work["poi_balance"] >= 35.0) if have_poi else True )
         )
         tips = work.loc[filt].copy()
         tips = add_kickoff(tips, col_date, col_time)
@@ -144,6 +166,8 @@ with tab1:
         if col_away: show_cols.append(col_away)
         if col_odds_o25: show_cols.append(col_odds_o25)
         show_cols += ["Combined25_BQ", "GS_GC_BP", "Volume_AB"]
+        if have_poi:
+            show_cols += ["poi_balance"]  # show the new signal
 
         if tips.empty:
             st.warning("No matches met the Over 2.5 rules.")
@@ -207,9 +231,9 @@ with tab2:
         work2["HomeOdds"]     = to_num(work2[col_home_odds]) if col_home_odds else np.nan
         work2["HomeGames_BU"] = to_num(work2[col_BU])
         work2["MatchVol_W"]   = to_num(work2[col_W])
-        work2["Pred_BY"]      = normalize_pct(to_num(work2[col_BY]))  # <-- normalized
-        work2["Pred_BZ"]      = normalize_pct(to_num(work2[col_BZ]))  # <-- normalized
-        work2["Pred_CA"]      = normalize_pct(to_num(work2[col_CA]))  # <-- normalized
+        work2["Pred_BY"]      = normalize_pct(to_num(work2[col_BY]))  # normalized
+        work2["Pred_BZ"]      = normalize_pct(to_num(work2[col_BZ]))  # normalized
+        work2["Pred_CA"]      = normalize_pct(to_num(work2[col_CA]))  # normalized
         work2["Attack_CE"]    = to_num(work2[col_CE])
         work2["WinsGame_CO"]  = to_num(work2[col_CO])
 
@@ -285,4 +309,3 @@ if dfs:
     st.dataframe(combined, use_container_width=True, height=500)  # optional preview
 else:
     st.info("Generate tips in the tabs above to enable the combined download.")
-
