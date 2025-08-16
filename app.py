@@ -2,7 +2,8 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 from PIL import Image
-st.set_page_config(layout="wide")   # ✅ Add this line here
+
+st.set_page_config(layout="wide")
 
 # =========================
 # Branding
@@ -48,6 +49,25 @@ def add_kickoff(frame, col_date, col_time):
     else:
         frame["Kickoff"] = pd.NaT
     return frame
+
+def normalize_pct(series: pd.Series) -> pd.Series:
+    """
+    Force values to % in [0,100].
+    Accepts inputs like 0.75 -> 75, 75.5 -> 75.5, 7550 -> 75.5, 10000 -> 100.
+    """
+    s = pd.to_numeric(series, errors="coerce")
+
+    def fix(v):
+        if pd.isna(v):
+            return v
+        v = float(v)
+        if v <= 1.0:            # proportions
+            v *= 100.0
+        while v > 100.0:        # scale down 7550 -> 755 -> 75.5
+            v /= 10.0
+        return v
+
+    return s.map(fix)
 
 # =========================
 # Upload
@@ -103,11 +123,7 @@ with tab1:
         work = df.copy()
         work["Volume_AB"]     = to_num(work[col_AB])
         work["GS_GC_BP"]      = to_num(work[col_BP])
-        work["Combined25_BQ"] = to_num(work[col_BQ])
-
-        # If BQ looks like 0–1, convert to %
-        if work["Combined25_BQ"].median(skipna=True) <= 1:
-            work["Combined25_BQ"] *= 100.0
+        work["Combined25_BQ"] = normalize_pct(work[col_BQ])  # <-- normalized robustly
 
         # Apply your rules
         filt = (
@@ -132,7 +148,6 @@ with tab1:
         if tips.empty:
             st.warning("No matches met the Over 2.5 rules.")
         else:
-            # --- Top‑N slider + clean sort ---
             tips = tips.sort_values("Combined25_BQ", ascending=False).reset_index(drop=True)
             top_n = st.slider("How many tips to show?", 5, 50, 10)  # default 10
             top = tips.head(top_n)
@@ -140,7 +155,7 @@ with tab1:
             st.success(f"SPM Tips (Over 2.5) — Top {len(top)}")
             st.dataframe(top[show_cols], use_container_width=True, height=500)
 
-            # Per‑tab CSV
+            # Per-tab CSV
             csv1 = top[show_cols].to_csv(index=False).encode("utf-8")
             st.download_button(
                 "📥 Download Over 2.5 SPM Tips (CSV)",
@@ -152,6 +167,7 @@ with tab1:
 
             # Save for combined download
             st.session_state["tips_over25"] = top[show_cols].assign(Strategy="Over 2.5")
+
 # --------------------------------------------------------------------
 # TAB 2: Home Fav Tips
 # Your rules (AUD only for W):
@@ -191,16 +207,11 @@ with tab2:
         work2["HomeOdds"]     = to_num(work2[col_home_odds]) if col_home_odds else np.nan
         work2["HomeGames_BU"] = to_num(work2[col_BU])
         work2["MatchVol_W"]   = to_num(work2[col_W])
-        work2["Pred_BY"]      = to_num(work2[col_BY])
-        work2["Pred_BZ"]      = to_num(work2[col_BZ])
-        work2["Pred_CA"]      = to_num(work2[col_CA])
+        work2["Pred_BY"]      = normalize_pct(to_num(work2[col_BY]))  # <-- normalized
+        work2["Pred_BZ"]      = normalize_pct(to_num(work2[col_BZ]))  # <-- normalized
+        work2["Pred_CA"]      = normalize_pct(to_num(work2[col_CA]))  # <-- normalized
         work2["Attack_CE"]    = to_num(work2[col_CE])
         work2["WinsGame_CO"]  = to_num(work2[col_CO])
-
-        # Normalize predictions to % if 0–1
-        for pcol in ["Pred_BY", "Pred_BZ", "Pred_CA"]:
-            if work2[pcol].median(skipna=True) <= 1:
-                work2[pcol] *= 100.0
 
         work2 = add_kickoff(work2, col_date, col_time)
 
@@ -231,13 +242,12 @@ with tab2:
         if tips2.empty:
             st.warning("No matches met the Home Fav rules.")
         else:
-            # Sort by strongest signal first (BY, BZ, then volume)
             tips2 = tips2.sort_values(["Pred_BY", "Pred_BZ", "MatchVol_W"], ascending=False).reset_index(drop=True)
             top2 = tips2.head(10)
             st.success(f"SPM Tips (Home Fav) — Top {len(top2)}")
-            st.dataframe(top2[show2])
+            st.dataframe(top2[show2], use_container_width=True, height=500)
 
-            # Per‑tab CSV
+            # Per-tab CSV
             csv2 = top2[show2].to_csv(index=False).encode("utf-8")
             st.download_button(
                 "📥 Download Home Fav SPM Tips (CSV)",
@@ -272,6 +282,7 @@ if dfs:
         mime="text/csv",
         key="dl_all_csv",
     )
-    st.dataframe(combined)  # optional preview
+    st.dataframe(combined, use_container_width=True, height=500)  # optional preview
 else:
     st.info("Generate tips in the tabs above to enable the combined download.")
+
