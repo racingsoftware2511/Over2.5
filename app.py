@@ -266,6 +266,189 @@ with tab2:
 
             # Save for combined download
             st.session_state["tips_homefav"] = top2[show2].assign(Strategy="Home Fav")
+            # --------------------------------------------------------------------
+# TAB 3: Over 2.5 (new rules with SIGNED Poisson gap)
+# Rules:
+#   Z  (Over25 odds) between 1.40 and 3.00
+#   (CJ - CI) >= 20  OR  (CJ - CI) <= -20    # signed gap
+#   BP (Combined GS) >= 3.0
+# --------------------------------------------------------------------
+with tab3:
+    st.subheader("Over 2.5 (Z 1.40–3.00, signed Poisson gap |CJ−CI|≥20, BP ≥ 3.0)")
+
+    IDX_Z  = excel_col_to_idx("Z")
+    IDX_BP = excel_col_to_idx("BP")
+    IDX_CI = excel_col_to_idx("CI")
+    IDX_CJ = excel_col_to_idx("CJ")
+
+    needed_max = max(IDX_Z, IDX_BP, IDX_CI, IDX_CJ)
+    if len(df.columns) <= needed_max:
+        st.error("Not enough columns for Z / BP / CI / CJ.")
+    else:
+        col_Z  = df.columns[IDX_Z]
+        col_BP = df.columns[IDX_BP]
+        col_CI = df.columns[IDX_CI]
+        col_CJ = df.columns[IDX_CJ]
+
+        w = df.copy()
+        w["O25_odds_Z"]     = to_num(w[col_Z])
+        w["CombinedGS_BP"]  = to_num(w[col_BP])
+        w["poi_h_CI"]       = to_num(w[col_CI])
+        w["poi_a_CJ"]       = to_num(w[col_CJ])
+
+        # SIGNED gap: CJ - CI (can be positive or negative)
+        w["poi_gap_signed"] = w["poi_a_CJ"] - w["poi_h_CI"]
+
+        w = add_kickoff(w, col_date, col_time)
+
+        filt = (
+            w["O25_odds_Z"].between(1.40, 3.00, inclusive="both") &
+            (
+                (w["poi_gap_signed"] >= 20.0) |
+                (w["poi_gap_signed"] <= -20.0)
+            ) &
+            (w["CombinedGS_BP"] >= 3.0)
+        )
+        tips3 = w.loc[filt].copy()
+
+        show3 = []
+        if col_country: show3.append(col_country)
+        show3 += ["Kickoff"]
+        if col_home: show3.append(col_home)
+        if col_away: show3.append(col_away)
+        show3 += ["O25_odds_Z", "CombinedGS_BP", "poi_h_CI", "poi_a_CJ", "poi_gap_signed"]
+
+        if tips3.empty:
+            st.warning("No matches met the Over 2.5 (signed Poisson gap) rules.")
+        else:
+            # Sort by goals signal then magnitude of gap (largest first)
+            tips3 = tips3.sort_values(
+                ["CombinedGS_BP", "poi_gap_signed"],
+                ascending=[False, False]
+            ).reset_index(drop=True)
+
+            top3 = tips3.head(20)
+            st.success(f"Over 2.5 (signed gap) — {len(top3)} picks")
+            st.dataframe(top3[show3], use_container_width=True, height=500)
+
+            csv3 = top3[show3].to_csv(index=False).encode("utf-8")
+            st.download_button(
+                "📥 Download Over 2.5 (signed Poisson gap) CSV",
+                data=csv3,
+                file_name="SPM_Over25_signed_gap.csv",
+                mime="text/csv",
+                key="dl_over25_signed"
+            )
+# --------------------------------------------------------------------
+# TAB 4: Lay the Draw
+# Rules:
+#   CE (Attacking H) ≥ 70 AND CF (Attacking A) ≥ 70
+#   P  (Draw odds)   < 4.0
+# --------------------------------------------------------------------
+with tab4:
+    st.subheader("Lay the Draw (CE≥70 & CF≥70, Draw odds P < 4.0)")
+
+    IDX_CE = excel_col_to_idx("CE")
+    IDX_CF = excel_col_to_idx("CF")
+    IDX_P  = excel_col_to_idx("P")    # Draw odds
+
+    needed_max = max(IDX_CE, IDX_CF, IDX_P)
+    if len(df.columns) <= needed_max:
+        st.error("Not enough columns for CE / CF / P.")
+    else:
+        col_CE = df.columns[IDX_CE]
+        col_CF = df.columns[IDX_CF]
+        col_P  = df.columns[IDX_P]
+
+        w = df.copy()
+        w["Attack_H_CE"] = to_num(w[col_CE])
+        w["Attack_A_CF"] = to_num(w[col_CF])
+        w["DrawOdds_P"]  = to_num(w[col_P])
+
+        w = add_kickoff(w, col_date, col_time)
+
+        filt = (
+            (w["Attack_H_CE"] >= 70.0) &
+            (w["Attack_A_CF"] >= 70.0) &
+            (w["DrawOdds_P"] < 4.0)
+        )
+        ltd = w.loc[filt].copy()
+
+        show4 = []
+        if col_country: show4.append(col_country)
+        show4 += ["Kickoff"]
+        if col_home: show4.append(col_home)
+        if col_away: show4.append(col_away)
+        show4 += ["DrawOdds_P", "Attack_H_CE", "Attack_A_CF"]
+
+        if ltd.empty:
+            st.warning("No matches met the Lay the Draw rules.")
+        else:
+            ltd = ltd.sort_values(["DrawOdds_P", "Attack_H_CE", "Attack_A_CF"],
+                                  ascending=[True, False, False]).reset_index(drop=True)
+            top4 = ltd.head(20)
+            st.success(f"Lay the Draw — {len(top4)} picks")
+            st.dataframe(top4[show4], use_container_width=True, height=500)
+
+            csv4 = top4[show4].to_csv(index=False).encode("utf-8")
+            st.download_button("📥 Download Lay the Draw CSV", data=csv4,
+                               file_name="SPM_LayDraw.csv", mime="text/csv", key="dl_ltd")
+
+# --------------------------------------------------------------------
+# TAB 5: Back the Away
+# Rules:
+#   CF (Attacking Away) ≥ 60
+#   CG (Defensive Home) ≤ 40
+#   CP (Wins The Game Away) ≥ 70
+# --------------------------------------------------------------------
+with tab5:
+    st.subheader("Back the Away (CF≥60, CG≤40, CP≥70)")
+
+    IDX_CF = excel_col_to_idx("CF")
+    IDX_CG = excel_col_to_idx("CG")
+    IDX_CP = excel_col_to_idx("CP")
+
+    needed_max = max(IDX_CF, IDX_CG, IDX_CP)
+    if len(df.columns) <= needed_max:
+        st.error("Not enough columns for CF / CG / CP.")
+    else:
+        col_CF = df.columns[IDX_CF]
+        col_CG = df.columns[IDX_CG]
+        col_CP = df.columns[IDX_CP]
+
+        w = df.copy()
+        w["Attack_A_CF"] = to_num(w[col_CF])
+        w["Def_H_CG"]    = to_num(w[col_CG])
+        w["Wins_A_CP"]   = to_num(w[col_CP])
+
+        w = add_kickoff(w, col_date, col_time)
+
+        filt = (
+            (w["Attack_A_CF"] >= 60.0) &
+            (w["Def_H_CG"] <= 40.0) &
+            (w["Wins_A_CP"]  >= 70.0)
+        )
+        bta = w.loc[filt].copy()
+
+        show5 = []
+        if col_country: show5.append(col_country)
+        show5 += ["Kickoff"]
+        if col_home: show5.append(col_home)
+        if col_away: show5.append(col_away)
+        show5 += ["Attack_A_CF", "Def_H_CG", "Wins_A_CP"]
+
+        if bta.empty:
+            st.warning("No matches met the Back the Away rules.")
+        else:
+            bta = bta.sort_values(["Wins_A_CP", "Attack_A_CF", "Def_H_CG"],
+                                  ascending=[False, False, True]).reset_index(drop=True)
+            top5 = bta.head(20)
+            st.success(f"Back the Away — {len(top5)} picks")
+            st.dataframe(top5[show5], use_container_width=True, height=500)
+
+            csv5 = top5[show5].to_csv(index=False).encode("utf-8")
+            st.download_button("📥 Download Back the Away CSV", data=csv5,
+                               file_name="SPM_BackAway.csv", mime="text/csv", key="dl_bta")
 # =========================
 # Combined Download
 # =========================
