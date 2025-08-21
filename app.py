@@ -410,66 +410,73 @@ with tab4:
 
 # --------------------------------------------------------------------
 # TAB 5: Back the Away
-# Rules:
-#   CF (Attacking Away) ≥ 60
-#   CG (Defensive Home) ≤ 40
-#   CP (Wins The Game Away) ≥ 70
 # --------------------------------------------------------------------
 with tab5:
-    st.subheader("Back the Away (Strategy5)")
+    st.subheader("Back the Away (CF≥60, CG≤40, CP≥70, any Away odds)")
 
-    IDX_CF = excel_col_to_idx("CF")
-    IDX_CG = excel_col_to_idx("CG")
-    IDX_CP = excel_col_to_idx("CP")
+    IDX_CF = excel_col_to_idx("CF")  # Attacking (Away)
+    IDX_CG = excel_col_to_idx("CG")  # Defensive (Home)
+    IDX_CP = excel_col_to_idx("CP")  # Wins The Game (Away)
+    IDX_M  = excel_col_to_idx("M")   # Away Odds
 
-    needed_max = max(IDX_CF, IDX_CG, IDX_CP)
+    needed_max = max(IDX_CF, IDX_CG, IDX_CP, IDX_M)
     if len(df.columns) <= needed_max:
-        st.error("Not enough columns for CF / CG / CP.")
+        st.error("Not enough columns for CF / CG / CP / M.")
     else:
         col_CF = df.columns[IDX_CF]
         col_CG = df.columns[IDX_CG]
         col_CP = df.columns[IDX_CP]
+        col_M  = df.columns[IDX_M]
 
         w = df.copy()
-        w["Attack_A_CF"] = to_num(w[col_CF])
-        w["Def_H_CG"]    = to_num(w[col_CG])
-        w["Wins_A_CP"]   = to_num(w[col_CP])
+        w["Attack_A_CF"]  = to_num(w[col_CF])
+        w["Defense_H_CG"] = to_num(w[col_CG])
+        w["Wins_A_CP"]    = to_num(w[col_CP])
+        w["AwayOdds_M"]   = to_num(w[col_M])
 
         w = add_kickoff(w, col_date, col_time)
 
+        # New rules
         filt = (
             (w["Attack_A_CF"] >= 60.0) &
-            (w["Def_H_CG"] <= 40.0) &
-            (w["Wins_A_CP"]  >= 70.0)
+            (w["Defense_H_CG"] <= 40.0) &
+            (w["Wins_A_CP"] >= 70.0)
+            # AwayOdds_M can be any number → no filter
         )
-        bta = w.loc[filt].copy()
+        backaway = w.loc[filt].copy()
 
         show5 = []
         if col_country: show5.append(col_country)
         show5 += ["Kickoff"]
         if col_home: show5.append(col_home)
         if col_away: show5.append(col_away)
-        show5 += ["Attack_A_CF", "Def_H_CG", "Wins_A_CP"]
+        show5 += ["AwayOdds_M", "Attack_A_CF", "Defense_H_CG", "Wins_A_CP"]
 
-        if bta.empty:
+        if backaway.empty:
             st.warning("No matches met the Back the Away rules.")
         else:
-            bta = bta.sort_values(["Wins_A_CP", "Attack_A_CF", "Def_H_CG"],
-                                  ascending=[False, False, True]).reset_index(drop=True)
-            top5 = bta.head(20)
+            backaway = backaway.sort_values(
+                ["Wins_A_CP", "Attack_A_CF", "Defense_H_CG"],
+                ascending=[False, False, True]
+            ).reset_index(drop=True)
+
+            top5 = backaway.head(20)
             st.success(f"Back the Away — {len(top5)} picks")
             st.dataframe(top5[show5], use_container_width=True, height=500)
+
+            # One CSV button (unique key)
             csv5 = top5[show5].to_csv(index=False).encode("utf-8")
             st.download_button(
                 "📥 Download Back the Away CSV",
                 data=csv5,
                 file_name="SPM_BackAway.csv",
                 mime="text/csv",
-                key="dl_bta_csv_t5"
+                key="dl_backaway_csv_t5",
             )
 
-            # Save for combined download (INSIDE else:)
+            # Save for combined download
             st.session_state["tips_back_away"] = top5[show5].assign(Strategy="Back the Away")
+
 # =========================
 # Combined Download
 # =========================
