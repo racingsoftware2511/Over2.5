@@ -339,7 +339,19 @@ with tab3:
                 mime="text/csv",
                 key="dl_over25_signed"
             )
-st.session_state["tips_over25_gap"] = top3[show3].assign(Strategy="Over 2.5 (Z/BP/signed gap)")
+            csv3 = top3[show3].to_csv(index=False).encode("utf-8")
+            st.download_button(
+                "📥 Download Over 2.5 (signed Poisson gap) CSV",
+                data=csv3,
+                file_name="SPM_Over25_signed_gap.csv",
+                mime="text/csv",
+                key="dl_over25_signed"
+            )
+
+            # Save for combined download (INSIDE else:)
+            st.session_state["tips_over25_gap"] = top3[show3].assign(
+                Strategy="Over 2.5 (Z/BP/signed gap)"
+            )
 # --------------------------------------------------------------------
 # TAB 4: Lay the Draw
 # Rules:
@@ -394,7 +406,17 @@ with tab4:
             csv4 = top4[show4].to_csv(index=False).encode("utf-8")
             st.download_button("📥 Download Lay the Draw CSV", data=csv4,
                                file_name="SPM_LayDraw.csv", mime="text/csv", key="dl_ltd")
-st.session_state["tips_lay_draw"] = top4[show4].assign(Strategy="Lay the Draw")
+            csv4 = top4[show4].to_csv(index=False).encode("utf-8")
+            st.download_button(
+                "📥 Download Lay the Draw CSV",
+                data=csv4,
+                file_name="SPM_LayDraw.csv",
+                mime="text/csv",
+                key="dl_ltd"
+            )
+
+            # Save for combined download (INSIDE else:)
+            st.session_state["tips_lay_draw"] = top4[show4].assign(Strategy="Lay the Draw")
 # --------------------------------------------------------------------
 # TAB 5: Back the Away
 # Rules:
@@ -450,7 +472,17 @@ with tab5:
             csv5 = top5[show5].to_csv(index=False).encode("utf-8")
             st.download_button("📥 Download Back the Away CSV", data=csv5,
                                file_name="SPM_BackAway.csv", mime="text/csv", key="dl_bta")
-st.session_state["tips_back_away"] = top5[show5].assign(Strategy="Back the Away")
+            csv5 = top5[show5].to_csv(index=False).encode("utf-8")
+            st.download_button(
+                "📥 Download Back the Away CSV",
+                data=csv5,
+                file_name="SPM_BackAway.csv",
+                mime="text/csv",
+                key="dl_bta"
+            )
+
+            # Save for combined download (INSIDE else:)
+            st.session_state["tips_back_away"] = top5[show5].assign(Strategy="Back the Away")
 # =========================
 # Combined Download
 # =========================
@@ -466,21 +498,29 @@ keys = [
     "tips_back_away",     # Tab 5
 ]
 
-dfs = [st.session_state[k] for k in keys if k in st.session_state]
+pieces = [st.session_state[k] for k in keys if k in st.session_state]
 
-if dfs:
+if pieces:
     # Unify columns across strategies
-    all_cols = sorted(set().union(*[df.columns for df in dfs]))
-    combined = pd.concat([df.reindex(columns=all_cols) for df in dfs], ignore_index=True)
+    all_cols = sorted(set().union(*[p.columns for p in pieces]))
+    combined = pd.concat([p.reindex(columns=all_cols) for p in pieces], ignore_index=True)
 
-    csv_all = combined.to_csv(index=False).encode("utf-8")
-    st.download_button(
-        label="📥 Download SPM Tips – All Strategies (CSV)",
-        data=csv_all,
-        file_name="SPM_Tips_All_Strategies.csv",
-        mime="text/csv",
-        key="dl_all_csv",
-    )
-    st.dataframe(combined, use_container_width=True, height=500)
+    # Put Strategy first if it exists
+    if "Strategy" in combined.columns:
+        ordered_cols = (["Strategy"] + [c for c in combined.columns if c != "Strategy"])
+        combined = combined[ordered_cols]
+
+    if combined.empty:
+        st.info("No rows to download yet — generate tips in any tab above.")
+    else:
+        csv_all = combined.to_csv(index=False).encode("utf-8")
+        st.download_button(
+            "📥 Download SPM Tips – All Strategies (CSV)",
+            data=csv_all,
+            file_name="SPM_Tips_All_Strategies.csv",
+            mime="text/csv",
+            key="dl_all_csv",
+        )
+        st.dataframe(combined, use_container_width=True, height=500)
 else:
     st.info("Generate tips in any tab above to enable the combined download.")
