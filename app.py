@@ -344,36 +344,34 @@ with tab3:
                 Strategy="Over 2.5 (Z/BP/signed gap)"
             )
 # --------------------------------------------------------------------
-# TAB 4: Lay the Draw
-# Rules:
-#   CE (Attacking H) ≥ 70 AND CF (Attacking A) ≥ 70
-#   P  (Draw odds)   < 4.0
+# TAB 4: Lay the Draw  (CE≥70, CC≥70, Draw odds P < 4.0)
 # --------------------------------------------------------------------
 with tab4:
-    st.subheader("Lay the Draw (Strategy4)")
+    st.subheader("Lay the Draw (CE≥70, CC≥70, Draw odds P<4.0)")
 
-    IDX_CE = excel_col_to_idx("CE")
-    IDX_CF = excel_col_to_idx("CF")
-    IDX_P  = excel_col_to_idx("P")    # Draw odds
+    IDX_CE = excel_col_to_idx("CE")  # Attacking (Home)
+    IDX_CC = excel_col_to_idx("CC")  # Strength (Home)
+    IDX_P  = excel_col_to_idx("P")   # Draw odds
 
-    needed_max = max(IDX_CE, IDX_CF, IDX_P)
+    needed_max = max(IDX_CE, IDX_CC, IDX_P)
     if len(df.columns) <= needed_max:
-        st.error("Not enough columns for CE / CF / P.")
+        st.error("Not enough columns for CE / CC / P.")
     else:
         col_CE = df.columns[IDX_CE]
-        col_CF = df.columns[IDX_CF]
+        col_CC = df.columns[IDX_CC]
         col_P  = df.columns[IDX_P]
 
         w = df.copy()
-        w["Attack_H_CE"] = to_num(w[col_CE])
-        w["Attack_A_CF"] = to_num(w[col_CF])
-        w["DrawOdds_P"]  = to_num(w[col_P])
+        w["Attack_H_CE"]   = to_num(w[col_CE])
+        w["Strength_H_CC"] = to_num(w[col_CC])
+        w["DrawOdds_P"]    = to_num(w[col_P])
 
         w = add_kickoff(w, col_date, col_time)
 
+        # New rules
         filt = (
             (w["Attack_H_CE"] >= 70.0) &
-            (w["Attack_A_CF"] >= 70.0) &
+            (w["Strength_H_CC"] >= 70.0) &
             (w["DrawOdds_P"] < 4.0)
         )
         ltd = w.loc[filt].copy()
@@ -383,27 +381,33 @@ with tab4:
         show4 += ["Kickoff"]
         if col_home: show4.append(col_home)
         if col_away: show4.append(col_away)
-        show4 += ["DrawOdds_P", "Attack_H_CE", "Attack_A_CF"]
+        show4 += ["DrawOdds_P", "Attack_H_CE", "Strength_H_CC"]
 
         if ltd.empty:
             st.warning("No matches met the Lay the Draw rules.")
         else:
-            ltd = ltd.sort_values(["DrawOdds_P", "Attack_H_CE", "Attack_A_CF"],
-                                  ascending=[True, False, False]).reset_index(drop=True)
+            ltd = ltd.sort_values(
+                ["DrawOdds_P", "Attack_H_CE", "Strength_H_CC"],
+                ascending=[True, False, False]
+            ).reset_index(drop=True)
+
             top4 = ltd.head(20)
             st.success(f"Lay the Draw — {len(top4)} picks")
             st.dataframe(top4[show4], use_container_width=True, height=500)
+
+            # One CSV button (unique key)
             csv4 = top4[show4].to_csv(index=False).encode("utf-8")
             st.download_button(
                 "📥 Download Lay the Draw CSV",
                 data=csv4,
                 file_name="SPM_LayDraw.csv",
                 mime="text/csv",
-                key="dl_ltd_csv_t4"
+                key="dl_ltd_csv_t4",
             )
 
-            # Save for combined download (INSIDE else:)
+            # Save for combined download
             st.session_state["tips_lay_draw"] = top4[show4].assign(Strategy="Lay the Draw")
+
 # --------------------------------------------------------------------
 # TAB 5: Back the Away
 # Rules:
