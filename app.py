@@ -347,7 +347,7 @@ with tab3:
 # TAB 4: Lay the Draw  (CE≥70, CC≥70, Draw odds P < 4.0)
 # --------------------------------------------------------------------
 with tab4:
-    st.subheader("Lay the Draw (CE≥70, CC≥70, Draw odds P<4.0)")
+    st.subheader("Lay the Draw (Strategy4)")
 
     IDX_CE = excel_col_to_idx("CE")  # Attacking (Home)
     IDX_CC = excel_col_to_idx("CC")  # Strength (Home)
