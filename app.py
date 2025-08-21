@@ -498,6 +498,17 @@ if pieces:
     # Unify columns across strategies
     all_cols = sorted(set().union(*[p.columns for p in pieces]))
     combined = pd.concat([p.reindex(columns=all_cols) for p in pieces], ignore_index=True)
+        # Reorder columns: Strategy, Home, Away, Kickoff, then the rest
+    front = []
+    if "Strategy" in combined.columns:
+        front.append("Strategy")
+
+    for name in ["Home", "Away", "Kickoff"]:   # adjust names if different
+        if name in combined.columns:
+            front.append(name)
+
+    rest = [c for c in combined.columns if c not in front]
+    combined = combined[front + rest]
 
     # Put Strategy first if it exists
     if "Strategy" in combined.columns:
