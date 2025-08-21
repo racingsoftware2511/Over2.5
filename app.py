@@ -274,7 +274,7 @@ with tab2:
 #   BP (Combined GS) >= 3.0
 # --------------------------------------------------------------------
 with tab3:
-    st.subheader("Over 2.5 (Z 1.40–3.00, signed Poisson gap |CJ−CI|≥20, BP ≥ 3.0)")
+    st.subheader("Over 2.5 (Strategy3)")
 
     IDX_Z  = excel_col_to_idx("Z")
     IDX_BP = excel_col_to_idx("BP")
@@ -346,7 +346,7 @@ with tab3:
 #   P  (Draw odds)   < 4.0
 # --------------------------------------------------------------------
 with tab4:
-    st.subheader("Lay the Draw (CE≥70 & CF≥70, Draw odds P < 4.0)")
+    st.subheader("Lay the Draw (Strategy4)")
 
     IDX_CE = excel_col_to_idx("CE")
     IDX_CF = excel_col_to_idx("CF")
@@ -402,7 +402,7 @@ with tab4:
 #   CP (Wins The Game Away) ≥ 70
 # --------------------------------------------------------------------
 with tab5:
-    st.subheader("Back the Away (CF≥60, CG≤40, CP≥70)")
+    st.subheader("Back the Away (Strategy5)")
 
     IDX_CF = excel_col_to_idx("CF")
     IDX_CG = excel_col_to_idx("CG")
