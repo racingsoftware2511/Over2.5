@@ -97,7 +97,13 @@ col_time    = pick_col(df, ["Time"])
 # =========================
 # Tabs (Strategies)
 # =========================
-tab1, tab2 = st.tabs(["⚽ Over 2.5 Tips", "🏠 Home Fav Tips"])
+tab1, tab2, tab3, tab4, tab5 = st.tabs([
+    "⚽ Over 2.5 Tips",
+    "🏠 Home Fav Tips",
+    "🔥 Over 2.5 (Based on Poisson)",
+    "🚫 Lay the Draw",
+    "✅ Back the Away"
+])
 # --------------------------------------------------------------------
 # TAB 1: Over 2.5 Tips  (Z odds 1.40–3.00, BP ≥ 3.0, BQ ≥ 60, min(CE,CF) ≥ 35)
 # Columns by Excel letter:
