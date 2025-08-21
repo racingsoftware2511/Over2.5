@@ -184,7 +184,7 @@ with tab1:
                 data=csv1,
                 file_name="SPM_Tips_Over25.csv",
                 mime="text/csv",
-                key="dl_over25_csv",
+                key="dl_over25_csv_t1",
             )
 
             # Save for combined download
@@ -261,7 +261,7 @@ with tab2:
                 data=csv2,
                 file_name="SPM_Tips_HomeFav.csv",
                 mime="text/csv",
-                key="dl_homefav_csv",
+                key="dl_homefav_csv_t2",
             )
 
             # Save for combined download
@@ -345,7 +345,7 @@ with tab3:
                 data=csv3,
                 file_name="SPM_Over25_signed_gap.csv",
                 mime="text/csv",
-                key="dl_over25_signed"
+                key="dl_over25_signed_t3"
             )
 
             # Save for combined download (INSIDE else:)
@@ -412,7 +412,7 @@ with tab4:
                 data=csv4,
                 file_name="SPM_LayDraw.csv",
                 mime="text/csv",
-                key="dl_ltd"
+                key="dl_ltd_csv_t4"
             )
 
             # Save for combined download (INSIDE else:)
@@ -478,7 +478,7 @@ with tab5:
                 data=csv5,
                 file_name="SPM_BackAway.csv",
                 mime="text/csv",
-                key="dl_bta"
+                key="dl_bta_csv_t5"
             )
 
             # Save for combined download (INSIDE else:)
@@ -519,7 +519,7 @@ if pieces:
             data=csv_all,
             file_name="SPM_Tips_All_Strategies.csv",
             mime="text/csv",
-            key="dl_all_csv",
+            key="dl_all_csv_main",
         )
         st.dataframe(combined, use_container_width=True, height=500)
 else:
