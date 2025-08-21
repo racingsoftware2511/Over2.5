@@ -330,15 +330,6 @@ with tab3:
             top3 = tips3.head(20)
             st.success(f"Over 2.5 (signed gap) — {len(top3)} picks")
             st.dataframe(top3[show3], use_container_width=True, height=500)
-
-            csv3 = top3[show3].to_csv(index=False).encode("utf-8")
-            st.download_button(
-                "📥 Download Over 2.5 (signed Poisson gap) CSV",
-                data=csv3,
-                file_name="SPM_Over25_signed_gap.csv",
-                mime="text/csv",
-                key="dl_over25_signed"
-            )
             csv3 = top3[show3].to_csv(index=False).encode("utf-8")
             st.download_button(
                 "📥 Download Over 2.5 (signed Poisson gap) CSV",
@@ -402,10 +393,6 @@ with tab4:
             top4 = ltd.head(20)
             st.success(f"Lay the Draw — {len(top4)} picks")
             st.dataframe(top4[show4], use_container_width=True, height=500)
-
-            csv4 = top4[show4].to_csv(index=False).encode("utf-8")
-            st.download_button("📥 Download Lay the Draw CSV", data=csv4,
-                               file_name="SPM_LayDraw.csv", mime="text/csv", key="dl_ltd")
             csv4 = top4[show4].to_csv(index=False).encode("utf-8")
             st.download_button(
                 "📥 Download Lay the Draw CSV",
@@ -468,10 +455,6 @@ with tab5:
             top5 = bta.head(20)
             st.success(f"Back the Away — {len(top5)} picks")
             st.dataframe(top5[show5], use_container_width=True, height=500)
-
-            csv5 = top5[show5].to_csv(index=False).encode("utf-8")
-            st.download_button("📥 Download Back the Away CSV", data=csv5,
-                               file_name="SPM_BackAway.csv", mime="text/csv", key="dl_bta")
             csv5 = top5[show5].to_csv(index=False).encode("utf-8")
             st.download_button(
                 "📥 Download Back the Away CSV",
