@@ -184,59 +184,43 @@ with tab1:
             # Save for combined download
             st.session_state["tips_over25"] = top[show_cols].assign(Strategy="Over 2.5")
 # --------------------------------------------------------------------
-# TAB 2: Home Fav Tips
-# Your rules (AUD only for W):
-# 1) Home Fav Odds (home odds) between 2.00 and 5.00
-# 2) Number of home games (BU) > 5
-# 3) Match Volume (W) ≥ 5,000 AUD
-# 4) Predictions: BY ≥ 45%, BZ ≥ 45%, CA ≥ 10%
-# 5) Attacking Potential (CE) ≥ 60
-# 6) Wins The Game (CO) ≥ 60
+# TAB 2: Home Fav Tips (Final rules)
+# Rules:
+# - Home Fav Odds between 2.00 and 4.00
+# - Home games (BU) > 10
+# - Attacking Potential (CE) ≥ 60
+# - Wins The Game (CO) ≥ 60
 # --------------------------------------------------------------------
 with tab2:
-    st.subheader("Home Fav Tips (6 Rules • AUD)")
+    st.subheader("Home Fav Tips (Strategy2)")
 
+    # Home odds column (by name; keep flexible)
     col_home_odds = pick_col(df, ["Home Back(T0)", "Home Odds", "Home Back(TO)", "Home Back"])
 
-    IDX_W  = excel_col_to_idx("W")   # Match Volume (AUD)
+    # Excel letters we need
     IDX_BU = excel_col_to_idx("BU")  # # home games
-    IDX_BY = excel_col_to_idx("BY")  # Prediction %
-    IDX_BZ = excel_col_to_idx("BZ")  # Prediction %
-    IDX_CA = excel_col_to_idx("CA")  # Prediction %
-    IDX_CE = excel_col_to_idx("CE")  # Attacking potential
+    IDX_CE = excel_col_to_idx("CE")  # Attacking potential (share 0–100)
     IDX_CO = excel_col_to_idx("CO")  # Wins The Game
 
-    need = max(IDX_W, IDX_BU, IDX_BY, IDX_BZ, IDX_CA, IDX_CE, IDX_CO)
-    if len(df.columns) <= need:
-        st.error("Not enough columns for W / BU / BY / BZ / CA / CE / CO.")
+    needed_max = max(IDX_BU, IDX_CE, IDX_CO)
+    if len(df.columns) <= needed_max:
+        st.error("Not enough columns for BU / CE / CO. Please export the full SPM file.")
     else:
-        col_W  = df.columns[IDX_W]
         col_BU = df.columns[IDX_BU]
-        col_BY = df.columns[IDX_BY]
-        col_BZ = df.columns[IDX_BZ]
-        col_CA = df.columns[IDX_CA]
         col_CE = df.columns[IDX_CE]
         col_CO = df.columns[IDX_CO]
 
         work2 = df.copy()
         work2["HomeOdds"]     = to_num(work2[col_home_odds]) if col_home_odds else np.nan
         work2["HomeGames_BU"] = to_num(work2[col_BU])
-        work2["MatchVol_W"]   = to_num(work2[col_W])
-        work2["Pred_BY"]      = normalize_pct(to_num(work2[col_BY]))  # normalized
-        work2["Pred_BZ"]      = normalize_pct(to_num(work2[col_BZ]))  # normalized
-        work2["Pred_CA"]      = normalize_pct(to_num(work2[col_CA]))  # normalized
-        work2["Attack_CE"]    = to_num(work2[col_CE])
+        work2["Attack_CE"]    = to_num(work2[col_CE])   # CE is already a 0–100 share
         work2["WinsGame_CO"]  = to_num(work2[col_CO])
 
         work2 = add_kickoff(work2, col_date, col_time)
 
         mask = (
-            (work2["HomeOdds"].between(2.00, 5.00, inclusive="both") if col_home_odds else True) &
-            (work2["HomeGames_BU"] > 5) &
-            (work2["MatchVol_W"] >= 5000.0) &
-            (work2["Pred_BY"] >= 45.0) &
-            (work2["Pred_BZ"] >= 45.0) &
-            (work2["Pred_CA"] >= 10.0) &
+            (work2["HomeOdds"].between(2.00, 4.00, inclusive="both") if col_home_odds else True) &
+            (work2["HomeGames_BU"] > 10) &
             (work2["Attack_CE"] >= 60.0) &
             (work2["WinsGame_CO"] >= 60.0)
         )
@@ -249,20 +233,22 @@ with tab2:
         if col_home: show2.append(col_home)
         if col_away: show2.append(col_away)
         if col_home_odds: show2.append("HomeOdds")
-        show2 += [
-            "HomeGames_BU", "MatchVol_W", "Pred_BY", "Pred_BZ", "Pred_CA",
-            "Attack_CE", "WinsGame_CO",
-        ]
+        show2 += ["HomeGames_BU", "Attack_CE", "WinsGame_CO"]
 
         if tips2.empty:
             st.warning("No matches met the Home Fav rules.")
         else:
-            tips2 = tips2.sort_values(["Pred_BY", "Pred_BZ", "MatchVol_W"], ascending=False).reset_index(drop=True)
+            # Sort strongest first
+            tips2 = tips2.sort_values(
+                ["WinsGame_CO", "Attack_CE", "HomeGames_BU"],
+                ascending=[False, False, False]
+            ).reset_index(drop=True)
+
             top2 = tips2.head(10)
             st.success(f"SPM Tips (Home Fav) — Top {len(top2)}")
             st.dataframe(top2[show2], use_container_width=True, height=500)
 
-            # Per-tab CSV
+            # CSV download
             csv2 = top2[show2].to_csv(index=False).encode("utf-8")
             st.download_button(
                 "📥 Download Home Fav SPM Tips (CSV)",
@@ -274,7 +260,6 @@ with tab2:
 
             # Save for combined download
             st.session_state["tips_homefav"] = top2[show2].assign(Strategy="Home Fav")
-
 # =========================
 # Combined Download
 # =========================
