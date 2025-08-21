@@ -108,7 +108,7 @@ tab1, tab2 = st.tabs(["⚽ Over 2.5 Tips", "🏠 Home Fav Tips"])
 #   CF = Attacking Potential (Away)  [share; 0–100]
 # --------------------------------------------------------------------
 with tab1:
-    st.subheader("Over 2.5 Tips (Z odds 1.40–3.00, BP ≥ 3.0, BQ ≥ 60, min(CE,CF) ≥ 35)")
+    st.subheader("Over 2.5 Tips (Strategy1)")
 
     IDX_Z  = excel_col_to_idx("Z")
     IDX_BP = excel_col_to_idx("BP")
