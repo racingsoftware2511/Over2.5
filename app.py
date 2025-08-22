@@ -134,6 +134,18 @@ def xl_col_letter(idx):
         n, r = divmod(n - 1, 26)
         letters = chr(65 + r) + letters
     return letters
+# === UI row coloring helper (no effect on CSV/Excel) ===
+def make_outcome_row_colorizer(strategy: str, ft_colname: str):
+    """Return a function(row) -> list[css] that colors a row WIN=green, LOSE=red."""
+    def _f(row):
+        ft = row.get(ft_colname)
+        outcome = decide_outcome(strategy, ft) if ft_colname else None
+        if outcome == "WIN":
+            return ["background-color: #e6ffea"] * len(row)  # soft green
+        if outcome == "LOSE":
+            return ["background-color: #ffecec"] * len(row)  # soft red
+        return [""] * len(row)
+    return _f
 # =========================
 # Upload
 # =========================
@@ -235,8 +247,12 @@ with tab1:
             top = tips.head(top_n)
 
             st.success(f"SPM Tips (Over 2.5) — Top {len(top)}")
-            st.dataframe(top[show_cols], use_container_width=True, height=500)
-
+            display1 = top[show_cols]
+if col_ft:  # only color if Full-Time column is available
+    styler1 = display1.style.apply(make_outcome_row_colorizer("Over 2.5", col_ft), axis=1)
+    st.dataframe(styler1, use_container_width=True, height=500)
+else:
+    st.dataframe(display1, use_container_width=True, height=500)
             csv1 = top[show_cols].to_csv(index=False).encode("utf-8")
             st.download_button(
                 "📥 Download Over 2.5 SPM Tips (CSV)",
@@ -303,8 +319,12 @@ with tab2:
 
             top2 = tips2.head(10)
             st.success(f"SPM Tips (Home Fav) — Top {len(top2)}")
-            st.dataframe(top2[show2], use_container_width=True, height=500)
-
+            display2 = top2[show2]
+if col_ft:
+    styler2 = display2.style.apply(make_outcome_row_colorizer("Home Fav", col_ft), axis=1)
+    st.dataframe(styler2, use_container_width=True, height=500)
+else:
+    st.dataframe(display2, use_container_width=True, height=500)
             csv2 = top2[show2].to_csv(index=False).encode("utf-8")
             st.download_button(
                 "📥 Download Home Fav SPM Tips (CSV)",
@@ -370,7 +390,12 @@ with tab3:
 
             top3 = tips3.head(20)
             st.success(f"Over 2.5 (signed gap) — {len(top3)} picks")
-            st.dataframe(top3[show3], use_container_width=True, height=500)
+           display3 = top3[show3]
+if col_ft:
+    styler3 = display3.style.apply(make_outcome_row_colorizer("Over 2.5", col_ft), axis=1)
+    st.dataframe(styler3, use_container_width=True, height=500)
+else:
+    st.dataframe(display3, use_container_width=True, height=500)
             csv3 = top3[show3].to_csv(index=False).encode("utf-8")
             st.download_button(
                 "📥 Download Over 2.5 (signed Poisson gap) CSV",
@@ -434,7 +459,12 @@ with tab4:
 
             top4 = ltd.head(20)
             st.success(f"Lay the Draw — {len(top4)} picks")
-            st.dataframe(top4[show4], use_container_width=True, height=500)
+            display4 = top4[show4]
+if col_ft:
+    styler4 = display4.style.apply(make_outcome_row_colorizer("Lay the Draw", col_ft), axis=1)
+    st.dataframe(styler4, use_container_width=True, height=500)
+else:
+    st.dataframe(display4, use_container_width=True, height=500)
 
             csv4 = top4[show4].to_csv(index=False).encode("utf-8")
             st.download_button(
@@ -500,8 +530,12 @@ with tab5:
 
             top5 = backaway.head(20)
             st.success(f"Back the Away — {len(top5)} picks")
-            st.dataframe(top5[show5], use_container_width=True, height=500)
-
+          display5 = top5[show5]
+if col_ft:
+    styler5 = display5.style.apply(make_outcome_row_colorizer("Back the Away", col_ft), axis=1)
+    st.dataframe(styler5, use_container_width=True, height=500)
+else:
+    st.dataframe(display5, use_container_width=True, height=500)
             csv5 = top5[show5].to_csv(index=False).encode("utf-8")
             st.download_button(
                 "📥 Download Back the Away CSV",
