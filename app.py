@@ -375,7 +375,7 @@ with tab4:
 # TAB 5
 # --------------------------------------------------------------------
 with tab5:
-    st.subheader("Back the Away (CF≥60, CG≤40, CP≥70, any Away odds)")
+    st.subheader("Back the Away (Strategy5)")
 
     IDX_CF = excel_col_to_idx("CF")
     IDX_CG = excel_col_to_idx("CG")
