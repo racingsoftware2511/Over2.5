@@ -60,6 +60,28 @@ def normalize_pct(series: pd.Series) -> pd.Series:
         return v
     return s.map(fix)
 
+# --- Pretty number formats for UI tables (no effect on CSV files) ---
+FORMAT_MAP = {
+    # Odds
+    "O25_odds_Z": "{:.2f}",
+    "HomeOdds": "{:.2f}",
+    "AwayOdds_M": "{:.2f}",
+    "DrawOdds_P": "{:.2f}",
+    # Model/goal metrics
+    "CombinedGS_BP": "{:.1f}",
+    "Combined25_BQ": "{:.1f}",
+    "poi_h_CI": "{:.0f}",
+    "poi_a_CJ": "{:.0f}",
+    "poi_gap_signed": "{:.0f}",
+    # Shares / ratings
+    "Attack_H_CE": "{:.0f}",
+    "Attack_A_CF": "{:.0f}",
+    "Strength_H_CC": "{:.0f}",
+    "WinsGame_CO": "{:.0f}",
+    "Wins_A_CP": "{:.0f}",
+    "Defense_H_CG": "{:.0f}",
+}
+
 # --- Outcome helpers (for UI coloring / combined XLSX) ---
 def parse_ft_to_goals(ft_str):
     """Parse '2-1' or '2:1' -> (2,1)."""
@@ -206,10 +228,12 @@ with tab1:
             st.success(f"SPM Tips (Over 2.5) — Top {len(top)}")
             display1 = top[show_cols]
             if col_ft:
-                styler1 = display1.style.apply(make_outcome_row_colorizer("Over 2.5", col_ft), axis=1)
+                styler1 = display1.style.apply(
+                    make_outcome_row_colorizer("Over 2.5", col_ft), axis=1
+                ).format(FORMAT_MAP, na_rep="")
                 st.dataframe(styler1, use_container_width=True, height=500)
             else:
-                st.dataframe(display1, use_container_width=True, height=500)
+                st.dataframe(display1.style.format(FORMAT_MAP, na_rep=""), use_container_width=True, height=500)
 
             csv1 = top[show_cols].to_csv(index=False).encode("utf-8")
             st.download_button(
@@ -276,10 +300,12 @@ with tab2:
             st.success(f"SPM Tips (Home Fav) — Top {len(top2)}")
             display2 = top2[show2]
             if col_ft:
-                styler2 = display2.style.apply(make_outcome_row_colorizer("Home Fav", col_ft), axis=1)
+                styler2 = display2.style.apply(
+                    make_outcome_row_colorizer("Home Fav", col_ft), axis=1
+                ).format(FORMAT_MAP, na_rep="")
                 st.dataframe(styler2, use_container_width=True, height=500)
             else:
-                st.dataframe(display2, use_container_width=True, height=500)
+                st.dataframe(display2.style.format(FORMAT_MAP, na_rep=""), use_container_width=True, height=500)
 
             csv2 = top2[show2].to_csv(index=False).encode("utf-8")
             st.download_button(
@@ -345,10 +371,12 @@ with tab3:
             st.success(f"Over 2.5 (signed gap) — {len(top3)} picks")
             display3 = top3[show3]
             if col_ft:
-                styler3 = display3.style.apply(make_outcome_row_colorizer("Over 2.5", col_ft), axis=1)
+                styler3 = display3.style.apply(
+                    make_outcome_row_colorizer("Over 2.5", col_ft), axis=1
+                ).format(FORMAT_MAP, na_rep="")
                 st.dataframe(styler3, use_container_width=True, height=500)
             else:
-                st.dataframe(display3, use_container_width=True, height=500)
+                st.dataframe(display3.style.format(FORMAT_MAP, na_rep=""), use_container_width=True, height=500)
 
             csv3 = top3[show3].to_csv(index=False).encode("utf-8")
             st.download_button(
@@ -412,10 +440,12 @@ with tab4:
             st.success(f"Lay the Draw — {len(top4)} picks")
             display4 = top4[show4]
             if col_ft:
-                styler4 = display4.style.apply(make_outcome_row_colorizer("Lay the Draw", col_ft), axis=1)
+                styler4 = display4.style.apply(
+                    make_outcome_row_colorizer("Lay the Draw", col_ft), axis=1
+                ).format(FORMAT_MAP, na_rep="")
                 st.dataframe(styler4, use_container_width=True, height=500)
             else:
-                st.dataframe(display4, use_container_width=True, height=500)
+                st.dataframe(display4.style.format(FORMAT_MAP, na_rep=""), use_container_width=True, height=500)
 
             csv4 = top4[show4].to_csv(index=False).encode("utf-8")
             st.download_button(
@@ -480,10 +510,12 @@ with tab5:
             st.success(f"Back the Away — {len(top5)} picks")
             display5 = top5[show5]
             if col_ft:
-                styler5 = display5.style.apply(make_outcome_row_colorizer("Back the Away", col_ft), axis=1)
+                styler5 = display5.style.apply(
+                    make_outcome_row_colorizer("Back the Away", col_ft), axis=1
+                ).format(FORMAT_MAP, na_rep="")
                 st.dataframe(styler5, use_container_width=True, height=500)
             else:
-                st.dataframe(display5, use_container_width=True, height=500)
+                st.dataframe(display5.style.format(FORMAT_MAP, na_rep=""), use_container_width=True, height=500)
 
             csv5 = top5[show5].to_csv(index=False).encode("utf-8")
             st.download_button(
@@ -549,7 +581,7 @@ if pieces:
     else:
         combined["Outcome"] = None
 
-    # UI colored preview
+    # UI colored preview + number formatting
     def _row_colorizer(row):
         color = ""
         if row.get("Outcome") == "WIN":
@@ -558,7 +590,7 @@ if pieces:
             color = "background-color: #ffecec"
         return [color] * len(row)
 
-    styled = combined.style.apply(_row_colorizer, axis=1)
+    styled = combined.style.apply(_row_colorizer, axis=1).format(FORMAT_MAP, na_rep="")
 
     if combined.empty:
         st.info("No rows to download yet — generate tips in any tab above.")
@@ -608,4 +640,3 @@ if pieces:
         st.dataframe(styled, use_container_width=True, height=500)
 else:
     st.info("Generate tips in any tab above to enable the combined download.")
-
