@@ -483,7 +483,6 @@ with tab5:
 st.markdown("---")
 st.subheader("📦 Download All SPM Tips (Combined)")
 
-# Collect whatever strategies are available
 keys = [
     "tips_over25",        # Tab 1
     "tips_homefav",       # Tab 2
@@ -492,28 +491,46 @@ keys = [
     "tips_back_away",     # Tab 5
 ]
 
-pieces = [st.session_state[k] for k in keys if k in st.session_state]
+pieces = [st.session_state[k].copy() for k in keys if k in st.session_state]
+
+def normalize(df: pd.DataFrame) -> pd.DataFrame:
+    """Make column names consistent and add derived columns."""
+    # Rename if present
+    rename_map = {
+        "Time": "Kickoff",
+        "HT": "Half-Time Score",
+        "Final Score": "Full-Time Score",
+    }
+    df = df.rename(columns={k: v for k, v in rename_map.items() if k in df.columns})
+
+    # Build Match column if Home/Away exist
+    if "Home" in df.columns and "Away" in df.columns:
+        df["Match"] = df["Home"].astype(str) + " vs " + df["Away"].astype(str)
+
+    return df
+
+# Normalize each piece first so concat aligns on consistent names
+pieces = [normalize(p) for p in pieces]
 
 if pieces:
     # Unify columns across strategies
     all_cols = sorted(set().union(*[p.columns for p in pieces]))
     combined = pd.concat([p.reindex(columns=all_cols) for p in pieces], ignore_index=True)
-        # Reorder columns: Strategy, Home, Away, Kickoff, then the rest
-    front = []
-    if "Strategy" in combined.columns:
-        front.append("Strategy")
 
-    for name in ["Home", "Away", "Kickoff"]:   # adjust names if different
+    # Desired front order
+    front = []
+    for name in ["Strategy", "Match", "Kickoff", "Half-Time Score", "Full-Time Score"]:
         if name in combined.columns:
             front.append(name)
 
-    rest = [c for c in combined.columns if c not in front]
-    combined = combined[front + rest]
+    # Remove raw Home/Away from the rest once Match is present
+    drop_raw = set()
+    if "Match" in front:
+        drop_raw.update(["Home", "Away"])
 
-    # Put Strategy first if it exists
-    if "Strategy" in combined.columns:
-        ordered_cols = (["Strategy"] + [c for c in combined.columns if c != "Strategy"])
-        combined = combined[ordered_cols]
+    rest = [c for c in combined.columns if c not in front and c not in drop_raw]
+
+    combined = combined[front + rest]
 
     if combined.empty:
         st.info("No rows to download yet — generate tips in any tab above.")
@@ -529,3 +546,4 @@ if pieces:
         st.dataframe(combined, use_container_width=True, height=500)
 else:
     st.info("Generate tips in any tab above to enable the combined download.")
+
