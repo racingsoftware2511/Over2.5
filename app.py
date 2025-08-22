@@ -2,6 +2,8 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 from PIL import Image
+import re
+from io import BytesIO
 
 st.set_page_config(layout="wide")
 
@@ -57,49 +59,8 @@ def normalize_pct(series: pd.Series) -> pd.Series:
         while v > 100.0: v /= 10.0
         return v
     return s.map(fix)
-# =========================
-# Helpers
-# =========================
-def excel_col_to_idx(col_letters: str) -> int:
-    s = 0
-    for ch in col_letters.upper():
-        s = s * 26 + (ord(ch) - 64)
-    return s - 1
 
-def pick_col(df, candidates):
-    lower = {c.lower(): c for c in df.columns}
-    for c in candidates:
-        if c.lower() in lower:
-            return lower[c.lower()]
-    return None
-
-def to_num(series):
-    return pd.to_numeric(series, errors="coerce")
-
-def add_kickoff(frame, col_date, col_time):
-    if col_date and col_time:
-        frame["Kickoff"] = pd.to_datetime(
-            frame[col_date].astype(str) + " " + frame[col_time].astype(str),
-            errors="coerce",
-        )
-    else:
-        frame["Kickoff"] = pd.NaT
-    return frame
-
-def normalize_pct(series: pd.Series) -> pd.Series:
-    s = pd.to_numeric(series, errors="coerce")
-    def fix(v):
-        if pd.isna(v): return v
-        v = float(v)
-        if v <= 1.0: v *= 100.0
-        while v > 100.0: v /= 10.0
-        return v
-    return s.map(fix)
-
-# === NEW HELPERS for outcomes & Excel coloring ===
-import re
-from io import BytesIO
-
+# --- Outcome helpers (for UI coloring / combined XLSX) ---
 def parse_ft_to_goals(ft_str):
     """Parse '2-1' or '2:1' -> (2,1)."""
     if not isinstance(ft_str, str):
@@ -115,7 +76,6 @@ def decide_outcome(strategy, ft_str):
     if hg is None or ag is None:
         return None
     s = (strategy or "").strip()
-
     if s.startswith("Over 2.5"):
         return "WIN" if (hg + ag) >= 3 else "LOSE"
     if s == "Home Fav":
@@ -127,14 +87,15 @@ def decide_outcome(strategy, ft_str):
     return None
 
 def xl_col_letter(idx):
-    """0-based index -> Excel column letters (0->A, 25->Z, 26->AA)."""
+    """0-based index -> Excel column letters."""
     n = idx + 1
     letters = ""
     while n:
         n, r = divmod(n - 1, 26)
         letters = chr(65 + r) + letters
     return letters
-# === UI row coloring helper (no effect on CSV/Excel) ===
+
+# --- UI row coloring helper (tabs 1–5 only; CSVs remain plain) ---
 def make_outcome_row_colorizer(strategy: str, ft_colname: str):
     """Return a function(row) -> list[css] that colors a row WIN=green, LOSE=red."""
     def _f(row):
@@ -146,6 +107,7 @@ def make_outcome_row_colorizer(strategy: str, ft_colname: str):
             return ["background-color: #ffecec"] * len(row)  # soft red
         return [""] * len(row)
     return _f
+
 # =========================
 # Upload
 # =========================
@@ -171,13 +133,9 @@ col_country = pick_col(df, ["Country", "League", "Competition"])
 col_date    = pick_col(df, ["Date"])
 col_time    = pick_col(df, ["Time"])
 
-# NEW: detect HT and FT once (support common aliases)
-col_ht = pick_col(df, [
-    "HT","Half-Time","Half Time","Half-Time Score","Half Time Score","HT Score"
-])
-col_ft = pick_col(df, [
-    "Final Score","FT","Full-Time","Full Time","Full-Time Score","Full Time Score","FT Score"
-])
+# Detect HT and FT once (support common aliases)
+col_ht = pick_col(df, ["HT","Half-Time","Half Time","Half-Time Score","Half Time Score","HT Score"])
+col_ft = pick_col(df, ["Final Score","FT","Full-Time","Full Time","Full-Time Score","Full Time Score","FT Score"])
 
 # =========================
 # Tabs (Strategies)
@@ -191,7 +149,7 @@ tab1, tab2, tab3, tab4, tab5 = st.tabs([
 ])
 
 # --------------------------------------------------------------------
-# TAB 1
+# TAB 1 — Over 2.5
 # --------------------------------------------------------------------
 with tab1:
     st.subheader("Over 2.5 Tips (Strategy1)")
@@ -232,9 +190,8 @@ with tab1:
         show_cols = []
         if col_country: show_cols.append(col_country)
         show_cols += ["Kickoff"]
-        # insert HT/FT immediately after Kickoff
-        if col_ht: show_cols.append(col_ht)
-        if col_ft: show_cols.append(col_ft)
+        if col_ht: show_cols.append(col_ht)   # HT after Kickoff
+        if col_ft: show_cols.append(col_ft)   # FT after HT
         if col_home: show_cols.append(col_home)
         if col_away: show_cols.append(col_away)
         show_cols += ["O25_odds_Z", "CombinedGS_BP", "Combined25_BQ", "Attack_H_CE", "Attack_A_CF"]
@@ -248,28 +205,25 @@ with tab1:
 
             st.success(f"SPM Tips (Over 2.5) — Top {len(top)}")
             display1 = top[show_cols]
+            if col_ft:
+                styler1 = display1.style.apply(make_outcome_row_colorizer("Over 2.5", col_ft), axis=1)
+                st.dataframe(styler1, use_container_width=True, height=500)
+            else:
+                st.dataframe(display1, use_container_width=True, height=500)
 
-if col_ft:  # color rows only if Full-Time Score column exists
-    styler1 = display1.style.apply(
-        make_outcome_row_colorizer("Over 2.5", col_ft), axis=1
-    )
-    st.dataframe(styler1, use_container_width=True, height=500)
-else:
-    st.dataframe(display1, use_container_width=True, height=500)
-
-csv1 = top[show_cols].to_csv(index=False).encode("utf-8")
-st.download_button(
-    "📥 Download Over 2.5 SPM Tips (CSV)",
-    data=csv1,
-    file_name="SPM_Tips_Over25.csv",
-    mime="text/csv",
-    key="dl_over25_csv_t1",
-)
+            csv1 = top[show_cols].to_csv(index=False).encode("utf-8")
+            st.download_button(
+                "📥 Download Over 2.5 SPM Tips (CSV)",
+                data=csv1,
+                file_name="SPM_Tips_Over25.csv",
+                mime="text/csv",
+                key="dl_over25_csv_t1",
+            )
 
             st.session_state["tips_over25"] = top[show_cols].assign(Strategy="Over 2.5")
 
 # --------------------------------------------------------------------
-# TAB 2
+# TAB 2 — Home Fav
 # --------------------------------------------------------------------
 with tab2:
     st.subheader("Home Fav Tips (Strategy2)")
@@ -316,19 +270,17 @@ with tab2:
         if tips2.empty:
             st.warning("No matches met the Home Fav rules.")
         else:
-            tips2 = tips2.sort_values(
-                ["WinsGame_CO", "Attack_CE", "HomeGames_BU"],
-                ascending=[False, False, False]
-            ).reset_index(drop=True)
-
+            tips2 = tips2.sort_values(["WinsGame_CO", "Attack_CE", "HomeGames_BU"], ascending=[False, False, False]).reset_index(drop=True)
             top2 = tips2.head(10)
+
             st.success(f"SPM Tips (Home Fav) — Top {len(top2)}")
             display2 = top2[show2]
-if col_ft:
-    styler2 = display2.style.apply(make_outcome_row_colorizer("Home Fav", col_ft), axis=1)
-    st.dataframe(styler2, use_container_width=True, height=500)
-else:
-    st.dataframe(display2, use_container_width=True, height=500)
+            if col_ft:
+                styler2 = display2.style.apply(make_outcome_row_colorizer("Home Fav", col_ft), axis=1)
+                st.dataframe(styler2, use_container_width=True, height=500)
+            else:
+                st.dataframe(display2, use_container_width=True, height=500)
+
             csv2 = top2[show2].to_csv(index=False).encode("utf-8")
             st.download_button(
                 "📥 Download Home Fav SPM Tips (CSV)",
@@ -341,7 +293,7 @@ else:
             st.session_state["tips_homefav"] = top2[show2].assign(Strategy="Home Fav")
 
 # --------------------------------------------------------------------
-# TAB 3
+# TAB 3 — Over 2.5 (signed Poisson gap)
 # --------------------------------------------------------------------
 with tab3:
     st.subheader("Over 2.5 (Strategy3)")
@@ -387,19 +339,17 @@ with tab3:
         if tips3.empty:
             st.warning("No matches met the Over 2.5 (signed Poisson gap) rules.")
         else:
-            tips3 = tips3.sort_values(
-                ["CombinedGS_BP", "poi_gap_signed"],
-                ascending=[False, False]
-            ).reset_index(drop=True)
-
+            tips3 = tips3.sort_values(["CombinedGS_BP", "poi_gap_signed"], ascending=[False, False]).reset_index(drop=True)
             top3 = tips3.head(20)
+
             st.success(f"Over 2.5 (signed gap) — {len(top3)} picks")
-           display3 = top3[show3]
-if col_ft:
-    styler3 = display3.style.apply(make_outcome_row_colorizer("Over 2.5", col_ft), axis=1)
-    st.dataframe(styler3, use_container_width=True, height=500)
-else:
-    st.dataframe(display3, use_container_width=True, height=500)
+            display3 = top3[show3]
+            if col_ft:
+                styler3 = display3.style.apply(make_outcome_row_colorizer("Over 2.5", col_ft), axis=1)
+                st.dataframe(styler3, use_container_width=True, height=500)
+            else:
+                st.dataframe(display3, use_container_width=True, height=500)
+
             csv3 = top3[show3].to_csv(index=False).encode("utf-8")
             st.download_button(
                 "📥 Download Over 2.5 (signed Poisson gap) CSV",
@@ -414,7 +364,7 @@ else:
             )
 
 # --------------------------------------------------------------------
-# TAB 4
+# TAB 4 — Lay the Draw
 # --------------------------------------------------------------------
 with tab4:
     st.subheader("Lay the Draw (Strategy4)")
@@ -456,19 +406,16 @@ with tab4:
         if ltd.empty:
             st.warning("No matches met the Lay the Draw rules.")
         else:
-            ltd = ltd.sort_values(
-                ["DrawOdds_P", "Attack_H_CE", "Strength_H_CC"],
-                ascending=[True, False, False]
-            ).reset_index(drop=True)
-
+            ltd = ltd.sort_values(["DrawOdds_P", "Attack_H_CE", "Strength_H_CC"], ascending=[True, False, False]).reset_index(drop=True)
             top4 = ltd.head(20)
+
             st.success(f"Lay the Draw — {len(top4)} picks")
             display4 = top4[show4]
-if col_ft:
-    styler4 = display4.style.apply(make_outcome_row_colorizer("Lay the Draw", col_ft), axis=1)
-    st.dataframe(styler4, use_container_width=True, height=500)
-else:
-    st.dataframe(display4, use_container_width=True, height=500)
+            if col_ft:
+                styler4 = display4.style.apply(make_outcome_row_colorizer("Lay the Draw", col_ft), axis=1)
+                st.dataframe(styler4, use_container_width=True, height=500)
+            else:
+                st.dataframe(display4, use_container_width=True, height=500)
 
             csv4 = top4[show4].to_csv(index=False).encode("utf-8")
             st.download_button(
@@ -482,7 +429,7 @@ else:
             st.session_state["tips_lay_draw"] = top4[show4].assign(Strategy="Lay the Draw")
 
 # --------------------------------------------------------------------
-# TAB 5
+# TAB 5 — Back the Away
 # --------------------------------------------------------------------
 with tab5:
     st.subheader("Back the Away (Strategy5)")
@@ -527,19 +474,17 @@ with tab5:
         if backaway.empty:
             st.warning("No matches met the Back the Away rules.")
         else:
-            backaway = backaway.sort_values(
-                ["Wins_A_CP", "Attack_A_CF", "Defense_H_CG"],
-                ascending=[False, False, True]
-            ).reset_index(drop=True)
-
+            backaway = backaway.sort_values(["Wins_A_CP", "Attack_A_CF", "Defense_H_CG"], ascending=[False, False, True]).reset_index(drop=True)
             top5 = backaway.head(20)
+
             st.success(f"Back the Away — {len(top5)} picks")
-          display5 = top5[show5]
-if col_ft:
-    styler5 = display5.style.apply(make_outcome_row_colorizer("Back the Away", col_ft), axis=1)
-    st.dataframe(styler5, use_container_width=True, height=500)
-else:
-    st.dataframe(display5, use_container_width=True, height=500)
+            display5 = top5[show5]
+            if col_ft:
+                styler5 = display5.style.apply(make_outcome_row_colorizer("Back the Away", col_ft), axis=1)
+                st.dataframe(styler5, use_container_width=True, height=500)
+            else:
+                st.dataframe(display5, use_container_width=True, height=500)
+
             csv5 = top5[show5].to_csv(index=False).encode("utf-8")
             st.download_button(
                 "📥 Download Back the Away CSV",
@@ -550,6 +495,7 @@ else:
             )
 
             st.session_state["tips_back_away"] = top5[show5].assign(Strategy="Back the Away")
+
 # =========================
 # Combined Download
 # =========================
@@ -559,7 +505,7 @@ st.subheader("📦 Download All SPM Tips (Combined)")
 keys = ["tips_over25","tips_homefav","tips_over25_gap","tips_lay_draw","tips_back_away"]
 pieces = [st.session_state[k].copy() for k in keys if k in st.session_state]
 
-def normalize(df_: pd.DataFrame) -> pd.DataFrame:
+def normalize_for_combined(df_: pd.DataFrame) -> pd.DataFrame:
     rename_map = {
         "Time": "Kickoff",
         "HT": "Half-Time Score",
@@ -579,7 +525,7 @@ def normalize(df_: pd.DataFrame) -> pd.DataFrame:
         df_["Match"] = df_["Home"].astype(str) + " vs " + df_["Away"].astype(str)
     return df_
 
-pieces = [normalize(p) for p in pieces]
+pieces = [normalize_for_combined(p) for p in pieces]
 
 if pieces:
     all_cols = sorted(set().union(*[p.columns for p in pieces]))
@@ -591,28 +537,25 @@ if pieces:
     rest = [c for c in combined.columns if c not in front and c not in drop_raw]
     combined = combined[front + rest]
 
-    # --- Outcome column (depends on Strategy + Full-Time Score) ---
+    # Outcome
     if "Full-Time Score" in combined.columns and "Strategy" in combined.columns:
         combined["Outcome"] = combined.apply(
             lambda r: decide_outcome(r.get("Strategy"), r.get("Full-Time Score")),
             axis=1
         )
-        # Put Outcome right after Full-Time Score
-        desired = []
-        for c in ["Strategy","Match","Kickoff","Half-Time Score","Full-Time Score","Outcome"]:
-            if c in combined.columns: desired.append(c)
+        desired = [c for c in ["Strategy","Match","Kickoff","Half-Time Score","Full-Time Score","Outcome"] if c in combined.columns]
         the_rest = [c for c in combined.columns if c not in desired]
         combined = combined[desired + the_rest]
     else:
         combined["Outcome"] = None
 
-    # --- Show with colors in the app ---
+    # UI colored preview
     def _row_colorizer(row):
         color = ""
         if row.get("Outcome") == "WIN":
-            color = "background-color: #e6ffea"  # soft green
+            color = "background-color: #e6ffea"
         elif row.get("Outcome") == "LOSE":
-            color = "background-color: #ffecec"  # soft red
+            color = "background-color: #ffecec"
         return [color] * len(row)
 
     styled = combined.style.apply(_row_colorizer, axis=1)
@@ -620,7 +563,7 @@ if pieces:
     if combined.empty:
         st.info("No rows to download yet — generate tips in any tab above.")
     else:
-        # CSV (no colors)
+        # CSV (plain)
         csv_all = combined.to_csv(index=False).encode("utf-8")
         st.download_button(
             "📥 Download SPM Tips – All Strategies (CSV)",
@@ -630,7 +573,7 @@ if pieces:
             key="dl_all_csv_main",
         )
 
-        # XLSX with colored rows
+        # Colored XLSX
         out = BytesIO()
         with pd.ExcelWriter(out, engine="xlsxwriter") as writer:
             combined.to_excel(writer, index=False, sheet_name="SPM Tips")
@@ -640,12 +583,9 @@ if pieces:
             green = wb.add_format({"bg_color": "#C6EFCE"})
             red   = wb.add_format({"bg_color": "#FFC7CE"})
 
-            # Conditional formatting based on 'Outcome' column across full rows
             out_idx = combined.columns.get_loc("Outcome")
             out_col_letter = xl_col_letter(out_idx)
-
-            # Data starts at row 2 in Excel (row index 1 in xlsxwriter)
-            start_row = 1
+            start_row = 1  # first data row
             ws.conditional_format(start_row, 0, nrows, ncols-1, {
                 "type": "formula",
                 "criteria": f"=${out_col_letter}{start_row+1}=\"WIN\"",
@@ -665,8 +605,7 @@ if pieces:
             key="dl_all_xlsx_colored",
         )
 
-        # Display in app with colors
         st.dataframe(styled, use_container_width=True, height=500)
-
 else:
     st.info("Generate tips in any tab above to enable the combined download.")
+
