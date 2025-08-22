@@ -57,7 +57,83 @@ def normalize_pct(series: pd.Series) -> pd.Series:
         while v > 100.0: v /= 10.0
         return v
     return s.map(fix)
+# =========================
+# Helpers
+# =========================
+def excel_col_to_idx(col_letters: str) -> int:
+    s = 0
+    for ch in col_letters.upper():
+        s = s * 26 + (ord(ch) - 64)
+    return s - 1
 
+def pick_col(df, candidates):
+    lower = {c.lower(): c for c in df.columns}
+    for c in candidates:
+        if c.lower() in lower:
+            return lower[c.lower()]
+    return None
+
+def to_num(series):
+    return pd.to_numeric(series, errors="coerce")
+
+def add_kickoff(frame, col_date, col_time):
+    if col_date and col_time:
+        frame["Kickoff"] = pd.to_datetime(
+            frame[col_date].astype(str) + " " + frame[col_time].astype(str),
+            errors="coerce",
+        )
+    else:
+        frame["Kickoff"] = pd.NaT
+    return frame
+
+def normalize_pct(series: pd.Series) -> pd.Series:
+    s = pd.to_numeric(series, errors="coerce")
+    def fix(v):
+        if pd.isna(v): return v
+        v = float(v)
+        if v <= 1.0: v *= 100.0
+        while v > 100.0: v /= 10.0
+        return v
+    return s.map(fix)
+
+# === NEW HELPERS for outcomes & Excel coloring ===
+import re
+from io import BytesIO
+
+def parse_ft_to_goals(ft_str):
+    """Parse '2-1' or '2:1' -> (2,1)."""
+    if not isinstance(ft_str, str):
+        return (None, None)
+    m = re.match(r"\s*(\d+)\s*[-:]\s*(\d+)\s*$", ft_str)
+    if not m:
+        return (None, None)
+    return int(m.group(1)), int(m.group(2))
+
+def decide_outcome(strategy, ft_str):
+    """Return 'WIN', 'LOSE' or None based on strategy and full-time score."""
+    hg, ag = parse_ft_to_goals(ft_str)
+    if hg is None or ag is None:
+        return None
+    s = (strategy or "").strip()
+
+    if s.startswith("Over 2.5"):
+        return "WIN" if (hg + ag) >= 3 else "LOSE"
+    if s == "Home Fav":
+        return "WIN" if hg > ag else "LOSE"
+    if s == "Lay the Draw":
+        return "WIN" if hg != ag else "LOSE"
+    if s == "Back the Away":
+        return "WIN" if ag > hg else "LOSE"
+    return None
+
+def xl_col_letter(idx):
+    """0-based index -> Excel column letters (0->A, 25->Z, 26->AA)."""
+    n = idx + 1
+    letters = ""
+    while n:
+        n, r = divmod(n - 1, 26)
+        letters = chr(65 + r) + letters
+    return letters
 # =========================
 # Upload
 # =========================
@@ -436,7 +512,6 @@ with tab5:
             )
 
             st.session_state["tips_back_away"] = top5[show5].assign(Strategy="Back the Away")
-
 # =========================
 # Combined Download
 # =========================
@@ -472,14 +547,42 @@ if pieces:
     all_cols = sorted(set().union(*[p.columns for p in pieces]))
     combined = pd.concat([p.reindex(columns=all_cols) for p in pieces], ignore_index=True)
 
+    # Front order & drop raw Home/Away if Match exists
     front = [c for c in ["Strategy","Match","Kickoff","Half-Time Score","Full-Time Score"] if c in combined.columns]
     drop_raw = {"Home","Away"} if "Match" in front else set()
     rest = [c for c in combined.columns if c not in front and c not in drop_raw]
     combined = combined[front + rest]
 
+    # --- Outcome column (depends on Strategy + Full-Time Score) ---
+    if "Full-Time Score" in combined.columns and "Strategy" in combined.columns:
+        combined["Outcome"] = combined.apply(
+            lambda r: decide_outcome(r.get("Strategy"), r.get("Full-Time Score")),
+            axis=1
+        )
+        # Put Outcome right after Full-Time Score
+        desired = []
+        for c in ["Strategy","Match","Kickoff","Half-Time Score","Full-Time Score","Outcome"]:
+            if c in combined.columns: desired.append(c)
+        the_rest = [c for c in combined.columns if c not in desired]
+        combined = combined[desired + the_rest]
+    else:
+        combined["Outcome"] = None
+
+    # --- Show with colors in the app ---
+    def _row_colorizer(row):
+        color = ""
+        if row.get("Outcome") == "WIN":
+            color = "background-color: #e6ffea"  # soft green
+        elif row.get("Outcome") == "LOSE":
+            color = "background-color: #ffecec"  # soft red
+        return [color] * len(row)
+
+    styled = combined.style.apply(_row_colorizer, axis=1)
+
     if combined.empty:
         st.info("No rows to download yet — generate tips in any tab above.")
     else:
+        # CSV (no colors)
         csv_all = combined.to_csv(index=False).encode("utf-8")
         st.download_button(
             "📥 Download SPM Tips – All Strategies (CSV)",
@@ -488,6 +591,44 @@ if pieces:
             mime="text/csv",
             key="dl_all_csv_main",
         )
-        st.dataframe(combined, use_container_width=True, height=500)
+
+        # XLSX with colored rows
+        out = BytesIO()
+        with pd.ExcelWriter(out, engine="xlsxwriter") as writer:
+            combined.to_excel(writer, index=False, sheet_name="SPM Tips")
+            wb  = writer.book
+            ws  = writer.sheets["SPM Tips"]
+            nrows, ncols = combined.shape
+            green = wb.add_format({"bg_color": "#C6EFCE"})
+            red   = wb.add_format({"bg_color": "#FFC7CE"})
+
+            # Conditional formatting based on 'Outcome' column across full rows
+            out_idx = combined.columns.get_loc("Outcome")
+            out_col_letter = xl_col_letter(out_idx)
+
+            # Data starts at row 2 in Excel (row index 1 in xlsxwriter)
+            start_row = 1
+            ws.conditional_format(start_row, 0, nrows, ncols-1, {
+                "type": "formula",
+                "criteria": f"=${out_col_letter}{start_row+1}=\"WIN\"",
+                "format": green
+            })
+            ws.conditional_format(start_row, 0, nrows, ncols-1, {
+                "type": "formula",
+                "criteria": f"=${out_col_letter}{start_row+1}=\"LOSE\"",
+                "format": red
+            })
+
+        st.download_button(
+            "📗 Download Colored Excel (XLSX)",
+            data=out.getvalue(),
+            file_name="SPM_Tips_All_Strategies_colored.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            key="dl_all_xlsx_colored",
+        )
+
+        # Display in app with colors
+        st.dataframe(styled, use_container_width=True, height=500)
+
 else:
     st.info("Generate tips in any tab above to enable the combined download.")
