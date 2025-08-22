@@ -248,11 +248,11 @@ with tab1:
 
             st.success(f"SPM Tips (Over 2.5) — Top {len(top)}")
             display1 = top[show_cols]
-if col_ft:  # only color if Full-Time column is available
-    styler1 = display1.style.apply(make_outcome_row_colorizer("Over 2.5", col_ft), axis=1)
-    st.dataframe(styler1, use_container_width=True, height=500)
-else:
-    st.dataframe(display1, use_container_width=True, height=500)
+       if col_ft:  # only color if Full-Time column is available
+       styler1 = display1.style.apply(make_outcome_row_colorizer("Over 2.5", col_ft), axis=1)
+       st.dataframe(styler1, use_container_width=True, height=500)
+       else:
+       st.dataframe(display1, use_container_width=True, height=500)
             csv1 = top[show_cols].to_csv(index=False).encode("utf-8")
             st.download_button(
                 "📥 Download Over 2.5 SPM Tips (CSV)",
