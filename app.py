@@ -23,14 +23,12 @@ st.write("Upload your SPM Excel and pick a strategy to generate tips.")
 # Helpers
 # =========================
 def excel_col_to_idx(col_letters: str) -> int:
-    """Excel letters -> 0-based index (e.g., AB -> 27)."""
     s = 0
     for ch in col_letters.upper():
         s = s * 26 + (ord(ch) - 64)
     return s - 1
 
 def pick_col(df, candidates):
-    """Find first matching column name (case-insensitive)."""
     lower = {c.lower(): c for c in df.columns}
     for c in candidates:
         if c.lower() in lower:
@@ -51,22 +49,13 @@ def add_kickoff(frame, col_date, col_time):
     return frame
 
 def normalize_pct(series: pd.Series) -> pd.Series:
-    """
-    Force values to % in [0,100].
-    Accepts inputs like 0.75 -> 75, 75.5 -> 75.5, 7550 -> 75.5, 10000 -> 100.
-    """
     s = pd.to_numeric(series, errors="coerce")
-
     def fix(v):
-        if pd.isna(v):
-            return v
+        if pd.isna(v): return v
         v = float(v)
-        if v <= 1.0:            # proportions
-            v *= 100.0
-        while v > 100.0:        # scale down 7550 -> 755 -> 75.5
-            v /= 10.0
+        if v <= 1.0: v *= 100.0   # proportions → %
+        while v > 100.0: v /= 10.0
         return v
-
     return s.map(fix)
 
 # =========================
@@ -94,6 +83,14 @@ col_country = pick_col(df, ["Country", "League", "Competition"])
 col_date    = pick_col(df, ["Date"])
 col_time    = pick_col(df, ["Time"])
 
+# NEW: detect HT and FT once (support common aliases)
+col_ht = pick_col(df, [
+    "HT","Half-Time","Half Time","Half-Time Score","Half Time Score","HT Score"
+])
+col_ft = pick_col(df, [
+    "Final Score","FT","Full-Time","Full Time","Full-Time Score","Full Time Score","FT Score"
+])
+
 # =========================
 # Tabs (Strategies)
 # =========================
@@ -104,14 +101,9 @@ tab1, tab2, tab3, tab4, tab5 = st.tabs([
     "🚫 Lay the Draw",
     "✅ Back the Away"
 ])
+
 # --------------------------------------------------------------------
-# TAB 1: Over 2.5 Tips  (Z odds 1.40–3.00, BP ≥ 3.0, BQ ≥ 60, min(CE,CF) ≥ 35)
-# Columns by Excel letter:
-#   Z  = Over 2.5 Odds
-#   BP = Combined GS (GS+GC proxy)
-#   BQ = Combined 2.5 (percentage-like; we normalize to 0–100)
-#   CE = Attacking Potential (Home)  [share; 0–100]
-#   CF = Attacking Potential (Away)  [share; 0–100]
+# TAB 1
 # --------------------------------------------------------------------
 with tab1:
     st.subheader("Over 2.5 Tips (Strategy1)")
@@ -122,46 +114,39 @@ with tab1:
     IDX_CE = excel_col_to_idx("CE")
     IDX_CF = excel_col_to_idx("CF")
 
-    # sanity check: do we have the needed columns?
     needed_max = max(IDX_Z, IDX_BP, IDX_BQ, IDX_CE, IDX_CF)
     if len(df.columns) <= needed_max:
         st.error("Not enough columns for Z / BP / BQ / CE / CF. Please export the full SPM file.")
     else:
-        col_Z  = df.columns[IDX_Z]     # Over 2.5 Odds
-        col_BP = df.columns[IDX_BP]    # Combined GS
-        col_BQ = df.columns[IDX_BQ]    # Combined 2.5
-        col_CE = df.columns[IDX_CE]    # Attacking Potential (H) share
-        col_CF = df.columns[IDX_CF]    # Attacking Potential (A) share
+        col_Z  = df.columns[IDX_Z]
+        col_BP = df.columns[IDX_BP]
+        col_BQ = df.columns[IDX_BQ]
+        col_CE = df.columns[IDX_CE]
+        col_CF = df.columns[IDX_CF]
 
         work = df.copy()
-
-        # Numbers
         work["O25_odds_Z"]    = to_num(work[col_Z])
         work["CombinedGS_BP"] = to_num(work[col_BP])
-        work["Combined25_BQ"] = normalize_pct(work[col_BQ])     # robust to 0–1, 0–10000, etc.
-
-        # Attacking shares (leave as 0–100 shares; DO NOT normalize to % again)
+        work["Combined25_BQ"] = normalize_pct(work[col_BQ])
         work["Attack_H_CE"]   = to_num(work[col_CE])
         work["Attack_A_CF"]   = to_num(work[col_CF])
         work["Attack_min"]    = pd.concat([work["Attack_H_CE"], work["Attack_A_CF"]], axis=1).min(axis=1)
-
-        # Build Kickoff timestamp if the date/time columns exist
         work = add_kickoff(work, col_date, col_time)
 
-        # ---- Apply your four rules ----
         filt = (
             work["O25_odds_Z"].between(1.40, 3.00, inclusive="both") &
             (work["CombinedGS_BP"] >= 3.0) &
             (work["Combined25_BQ"] >= 60.0) &
             (work["Attack_min"] >= 35.0)
         )
-
         tips = work.loc[filt].copy()
 
-        # Columns to show
         show_cols = []
         if col_country: show_cols.append(col_country)
         show_cols += ["Kickoff"]
+        # insert HT/FT immediately after Kickoff
+        if col_ht: show_cols.append(col_ht)
+        if col_ft: show_cols.append(col_ft)
         if col_home: show_cols.append(col_home)
         if col_away: show_cols.append(col_away)
         show_cols += ["O25_odds_Z", "CombinedGS_BP", "Combined25_BQ", "Attack_H_CE", "Attack_A_CF"]
@@ -169,15 +154,13 @@ with tab1:
         if tips.empty:
             st.warning("No matches met the Over 2.5 rules.")
         else:
-            # Sort by strongest signals first (BQ then CombinedGS)
             tips = tips.sort_values(["Combined25_BQ", "CombinedGS_BP"], ascending=False).reset_index(drop=True)
-            top_n = st.slider("How many tips to show?", 5, 50, 10)  # default 10
+            top_n = st.slider("How many tips to show?", 5, 50, 10)
             top = tips.head(top_n)
 
             st.success(f"SPM Tips (Over 2.5) — Top {len(top)}")
             st.dataframe(top[show_cols], use_container_width=True, height=500)
 
-            # Per‑tab CSV
             csv1 = top[show_cols].to_csv(index=False).encode("utf-8")
             st.download_button(
                 "📥 Download Over 2.5 SPM Tips (CSV)",
@@ -187,26 +170,19 @@ with tab1:
                 key="dl_over25_csv_t1",
             )
 
-            # Save for combined download
             st.session_state["tips_over25"] = top[show_cols].assign(Strategy="Over 2.5")
+
 # --------------------------------------------------------------------
-# TAB 2: Home Fav Tips (Final rules)
-# Rules:
-# - Home Fav Odds between 2.00 and 4.00
-# - Home games (BU) > 10
-# - Attacking Potential (CE) ≥ 60
-# - Wins The Game (CO) ≥ 60
+# TAB 2
 # --------------------------------------------------------------------
 with tab2:
     st.subheader("Home Fav Tips (Strategy2)")
 
-    # Home odds column (by name; keep flexible)
     col_home_odds = pick_col(df, ["Home Back(T0)", "Home Odds", "Home Back(TO)", "Home Back"])
 
-    # Excel letters we need
-    IDX_BU = excel_col_to_idx("BU")  # # home games
-    IDX_CE = excel_col_to_idx("CE")  # Attacking potential (share 0–100)
-    IDX_CO = excel_col_to_idx("CO")  # Wins The Game
+    IDX_BU = excel_col_to_idx("BU")
+    IDX_CE = excel_col_to_idx("CE")
+    IDX_CO = excel_col_to_idx("CO")
 
     needed_max = max(IDX_BU, IDX_CE, IDX_CO)
     if len(df.columns) <= needed_max:
@@ -219,9 +195,8 @@ with tab2:
         work2 = df.copy()
         work2["HomeOdds"]     = to_num(work2[col_home_odds]) if col_home_odds else np.nan
         work2["HomeGames_BU"] = to_num(work2[col_BU])
-        work2["Attack_CE"]    = to_num(work2[col_CE])   # CE is already a 0–100 share
+        work2["Attack_CE"]    = to_num(work2[col_CE])
         work2["WinsGame_CO"]  = to_num(work2[col_CO])
-
         work2 = add_kickoff(work2, col_date, col_time)
 
         mask = (
@@ -230,12 +205,13 @@ with tab2:
             (work2["Attack_CE"] >= 60.0) &
             (work2["WinsGame_CO"] >= 60.0)
         )
-
         tips2 = work2.loc[mask].copy()
 
         show2 = []
         if col_country: show2.append(col_country)
         show2 += ["Kickoff"]
+        if col_ht: show2.append(col_ht)
+        if col_ft: show2.append(col_ft)
         if col_home: show2.append(col_home)
         if col_away: show2.append(col_away)
         if col_home_odds: show2.append("HomeOdds")
@@ -244,7 +220,6 @@ with tab2:
         if tips2.empty:
             st.warning("No matches met the Home Fav rules.")
         else:
-            # Sort strongest first
             tips2 = tips2.sort_values(
                 ["WinsGame_CO", "Attack_CE", "HomeGames_BU"],
                 ascending=[False, False, False]
@@ -254,7 +229,6 @@ with tab2:
             st.success(f"SPM Tips (Home Fav) — Top {len(top2)}")
             st.dataframe(top2[show2], use_container_width=True, height=500)
 
-            # CSV download
             csv2 = top2[show2].to_csv(index=False).encode("utf-8")
             st.download_button(
                 "📥 Download Home Fav SPM Tips (CSV)",
@@ -264,14 +238,10 @@ with tab2:
                 key="dl_homefav_csv_t2",
             )
 
-            # Save for combined download
             st.session_state["tips_homefav"] = top2[show2].assign(Strategy="Home Fav")
-            # --------------------------------------------------------------------
-# TAB 3: Over 2.5 (new rules with SIGNED Poisson gap)
-# Rules:
-#   Z  (Over25 odds) between 1.40 and 3.00
-#   (CJ - CI) >= 20  OR  (CJ - CI) <= -20    # signed gap
-#   BP (Combined GS) >= 3.0
+
+# --------------------------------------------------------------------
+# TAB 3
 # --------------------------------------------------------------------
 with tab3:
     st.subheader("Over 2.5 (Strategy3)")
@@ -295,18 +265,12 @@ with tab3:
         w["CombinedGS_BP"]  = to_num(w[col_BP])
         w["poi_h_CI"]       = to_num(w[col_CI])
         w["poi_a_CJ"]       = to_num(w[col_CJ])
-
-        # SIGNED gap: CJ - CI (can be positive or negative)
         w["poi_gap_signed"] = w["poi_a_CJ"] - w["poi_h_CI"]
-
         w = add_kickoff(w, col_date, col_time)
 
         filt = (
             w["O25_odds_Z"].between(1.40, 3.00, inclusive="both") &
-            (
-                (w["poi_gap_signed"] >= 20.0) |
-                (w["poi_gap_signed"] <= -20.0)
-            ) &
+            ((w["poi_gap_signed"] >= 20.0) | (w["poi_gap_signed"] <= -20.0)) &
             (w["CombinedGS_BP"] >= 3.0)
         )
         tips3 = w.loc[filt].copy()
@@ -314,6 +278,8 @@ with tab3:
         show3 = []
         if col_country: show3.append(col_country)
         show3 += ["Kickoff"]
+        if col_ht: show3.append(col_ht)
+        if col_ft: show3.append(col_ft)
         if col_home: show3.append(col_home)
         if col_away: show3.append(col_away)
         show3 += ["O25_odds_Z", "CombinedGS_BP", "poi_h_CI", "poi_a_CJ", "poi_gap_signed"]
@@ -321,7 +287,6 @@ with tab3:
         if tips3.empty:
             st.warning("No matches met the Over 2.5 (signed Poisson gap) rules.")
         else:
-            # Sort by goals signal then magnitude of gap (largest first)
             tips3 = tips3.sort_values(
                 ["CombinedGS_BP", "poi_gap_signed"],
                 ascending=[False, False]
@@ -339,19 +304,19 @@ with tab3:
                 key="dl_over25_signed_t3"
             )
 
-            # Save for combined download (INSIDE else:)
             st.session_state["tips_over25_gap"] = top3[show3].assign(
                 Strategy="Over 2.5 (Z/BP/signed gap)"
             )
+
 # --------------------------------------------------------------------
-# TAB 4: Lay the Draw  (CE≥70, CC≥70, Draw odds P < 4.0)
+# TAB 4
 # --------------------------------------------------------------------
 with tab4:
     st.subheader("Lay the Draw (Strategy4)")
 
-    IDX_CE = excel_col_to_idx("CE")  # Attacking (Home)
-    IDX_CC = excel_col_to_idx("CC")  # Strength (Home)
-    IDX_P  = excel_col_to_idx("P")   # Draw odds
+    IDX_CE = excel_col_to_idx("CE")
+    IDX_CC = excel_col_to_idx("CC")
+    IDX_P  = excel_col_to_idx("P")
 
     needed_max = max(IDX_CE, IDX_CC, IDX_P)
     if len(df.columns) <= needed_max:
@@ -365,10 +330,8 @@ with tab4:
         w["Attack_H_CE"]   = to_num(w[col_CE])
         w["Strength_H_CC"] = to_num(w[col_CC])
         w["DrawOdds_P"]    = to_num(w[col_P])
-
         w = add_kickoff(w, col_date, col_time)
 
-        # New rules
         filt = (
             (w["Attack_H_CE"] >= 70.0) &
             (w["Strength_H_CC"] >= 70.0) &
@@ -379,6 +342,8 @@ with tab4:
         show4 = []
         if col_country: show4.append(col_country)
         show4 += ["Kickoff"]
+        if col_ht: show4.append(col_ht)
+        if col_ft: show4.append(col_ft)
         if col_home: show4.append(col_home)
         if col_away: show4.append(col_away)
         show4 += ["DrawOdds_P", "Attack_H_CE", "Strength_H_CC"]
@@ -395,7 +360,6 @@ with tab4:
             st.success(f"Lay the Draw — {len(top4)} picks")
             st.dataframe(top4[show4], use_container_width=True, height=500)
 
-            # One CSV button (unique key)
             csv4 = top4[show4].to_csv(index=False).encode("utf-8")
             st.download_button(
                 "📥 Download Lay the Draw CSV",
@@ -405,19 +369,18 @@ with tab4:
                 key="dl_ltd_csv_t4",
             )
 
-            # Save for combined download
             st.session_state["tips_lay_draw"] = top4[show4].assign(Strategy="Lay the Draw")
 
 # --------------------------------------------------------------------
-# TAB 5: Back the Away
+# TAB 5
 # --------------------------------------------------------------------
 with tab5:
     st.subheader("Back the Away (CF≥60, CG≤40, CP≥70, any Away odds)")
 
-    IDX_CF = excel_col_to_idx("CF")  # Attacking (Away)
-    IDX_CG = excel_col_to_idx("CG")  # Defensive (Home)
-    IDX_CP = excel_col_to_idx("CP")  # Wins The Game (Away)
-    IDX_M  = excel_col_to_idx("M")   # Away Odds
+    IDX_CF = excel_col_to_idx("CF")
+    IDX_CG = excel_col_to_idx("CG")
+    IDX_CP = excel_col_to_idx("CP")
+    IDX_M  = excel_col_to_idx("M")
 
     needed_max = max(IDX_CF, IDX_CG, IDX_CP, IDX_M)
     if len(df.columns) <= needed_max:
@@ -433,21 +396,20 @@ with tab5:
         w["Defense_H_CG"] = to_num(w[col_CG])
         w["Wins_A_CP"]    = to_num(w[col_CP])
         w["AwayOdds_M"]   = to_num(w[col_M])
-
         w = add_kickoff(w, col_date, col_time)
 
-        # New rules
         filt = (
             (w["Attack_A_CF"] >= 60.0) &
             (w["Defense_H_CG"] <= 40.0) &
             (w["Wins_A_CP"] >= 70.0)
-            # AwayOdds_M can be any number → no filter
         )
         backaway = w.loc[filt].copy()
 
         show5 = []
         if col_country: show5.append(col_country)
         show5 += ["Kickoff"]
+        if col_ht: show5.append(col_ht)
+        if col_ft: show5.append(col_ft)
         if col_home: show5.append(col_home)
         if col_away: show5.append(col_away)
         show5 += ["AwayOdds_M", "Attack_A_CF", "Defense_H_CG", "Wins_A_CP"]
@@ -464,7 +426,6 @@ with tab5:
             st.success(f"Back the Away — {len(top5)} picks")
             st.dataframe(top5[show5], use_container_width=True, height=500)
 
-            # One CSV button (unique key)
             csv5 = top5[show5].to_csv(index=False).encode("utf-8")
             st.download_button(
                 "📥 Download Back the Away CSV",
@@ -474,7 +435,6 @@ with tab5:
                 key="dl_backaway_csv_t5",
             )
 
-            # Save for combined download
             st.session_state["tips_back_away"] = top5[show5].assign(Strategy="Back the Away")
 
 # =========================
@@ -483,53 +443,38 @@ with tab5:
 st.markdown("---")
 st.subheader("📦 Download All SPM Tips (Combined)")
 
-keys = [
-    "tips_over25",        # Tab 1
-    "tips_homefav",       # Tab 2
-    "tips_over25_gap",    # Tab 3
-    "tips_lay_draw",      # Tab 4
-    "tips_back_away",     # Tab 5
-]
-
+keys = ["tips_over25","tips_homefav","tips_over25_gap","tips_lay_draw","tips_back_away"]
 pieces = [st.session_state[k].copy() for k in keys if k in st.session_state]
 
-def normalize(df: pd.DataFrame) -> pd.DataFrame:
-    """Make column names consistent and add derived columns."""
-    # Rename if present
+def normalize(df_: pd.DataFrame) -> pd.DataFrame:
     rename_map = {
         "Time": "Kickoff",
         "HT": "Half-Time Score",
+        "Half-Time": "Half-Time Score",
+        "Half Time": "Half-Time Score",
+        "Half-Time Score": "Half-Time Score",
+        "Half Time Score": "Half-Time Score",
         "Final Score": "Full-Time Score",
+        "FT": "Full-Time Score",
+        "Full-Time": "Full-Time Score",
+        "Full Time": "Full-Time Score",
+        "Full-Time Score": "Full-Time Score",
+        "Full Time Score": "Full-Time Score",
     }
-    df = df.rename(columns={k: v for k, v in rename_map.items() if k in df.columns})
+    df_ = df_.rename(columns={k: v for k, v in rename_map.items() if k in df_.columns})
+    if "Home" in df_.columns and "Away" in df_.columns:
+        df_["Match"] = df_["Home"].astype(str) + " vs " + df_["Away"].astype(str)
+    return df_
 
-    # Build Match column if Home/Away exist
-    if "Home" in df.columns and "Away" in df.columns:
-        df["Match"] = df["Home"].astype(str) + " vs " + df["Away"].astype(str)
-
-    return df
-
-# Normalize each piece first so concat aligns on consistent names
 pieces = [normalize(p) for p in pieces]
 
 if pieces:
-    # Unify columns across strategies
     all_cols = sorted(set().union(*[p.columns for p in pieces]))
     combined = pd.concat([p.reindex(columns=all_cols) for p in pieces], ignore_index=True)
 
-    # Desired front order
-    front = []
-    for name in ["Strategy", "Match", "Kickoff", "Half-Time Score", "Full-Time Score"]:
-        if name in combined.columns:
-            front.append(name)
-
-    # Remove raw Home/Away from the rest once Match is present
-    drop_raw = set()
-    if "Match" in front:
-        drop_raw.update(["Home", "Away"])
-
+    front = [c for c in ["Strategy","Match","Kickoff","Half-Time Score","Full-Time Score"] if c in combined.columns]
+    drop_raw = {"Home","Away"} if "Match" in front else set()
     rest = [c for c in combined.columns if c not in front and c not in drop_raw]
-
     combined = combined[front + rest]
 
     if combined.empty:
@@ -546,4 +491,3 @@ if pieces:
         st.dataframe(combined, use_container_width=True, height=500)
 else:
     st.info("Generate tips in any tab above to enable the combined download.")
-
