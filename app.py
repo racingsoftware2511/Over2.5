@@ -21,7 +21,7 @@ try:
     banner_base64 = get_base64_of_image("spmlogo_main.png")
     st.markdown(
         f"""
-        <a href="https://spmaiagent.streamlit.app/" target="_blank">
+        <a href="https://soccerpricemonitor.com/" target="_blank">
             <img src="data:image/png;base64,{banner_base64}" style="width:100%;border-radius:8px;"/>
         </a>
         """,
