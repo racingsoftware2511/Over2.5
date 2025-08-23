@@ -5,11 +5,33 @@ import numpy as np
 from PIL import Image
 import re
 from io import BytesIO
+import base64
 
 st.set_page_config(layout="wide")
 
 # =========================
-# Branding
+# Banner with hyperlink
+# =========================
+def get_base64_of_image(img_path):
+    with open(img_path, "rb") as f:
+        data = f.read()
+    return base64.b64encode(data).decode()
+
+try:
+    banner_base64 = get_base64_of_image("spmlogo_main.png")
+    st.markdown(
+        f"""
+        <a href="https://spmaiagent.streamlit.app/" target="_blank">
+            <img src="data:image/png;base64,{banner_base64}" style="width:100%;border-radius:8px;"/>
+        </a>
+        """,
+        unsafe_allow_html=True
+    )
+except Exception:
+    st.warning("Banner image not found.")
+
+# =========================
+# Branding (below banner)
 # =========================
 try:
     st.image(Image.open("spm_logo.png"), width=180)
@@ -21,6 +43,7 @@ st.markdown(
     unsafe_allow_html=True,
 )
 st.write("Upload your SPM Excel and pick a strategy to generate tips.")
+
 
 # =========================
 # Helpers
