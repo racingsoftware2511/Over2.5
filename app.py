@@ -43,7 +43,20 @@ st.markdown(
     unsafe_allow_html=True,
 )
 st.write("Upload your SPM Excel and pick a strategy to generate tips.")
-
+# =========================
+# Branding (with banner)
+# =========================
+st.markdown(
+    """
+    <div style="text-align:center; margin-bottom:20px;">
+        <a href="https://soccerpricemonitor.com/" target="_blank">
+            <img src="https://raw.githubusercontent.com/racingsoftware2511/Over2.5/main/spmlogo_main.png"
+                 style="width:30%; max-width:600px; height:auto;">
+        </a>
+    </div>
+    """,
+    unsafe_allow_html=True,
+)
 
 # =========================
 # Helpers
