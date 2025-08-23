@@ -32,7 +32,7 @@ st.markdown(
     f"""
     <div style="text-align:center; margin-bottom:20px;">
         <a href="{BANNER_LINK}" target="_blank">
-            <img src="{banner_src}" style="width:40%; max-width:700px; height:auto;">
+            <img src="{banner_src}" style="width:40%; max-width:800px; height:auto;">
         </a>
     </div>
     """,
