@@ -155,6 +155,63 @@ def summarize_picks(picks: pd.DataFrame, df: pd.DataFrame, strategy: str):
         # No results available yet
         return n, None, None, None
 
+    # Build the base (only row id + result columns from the source DF)
+    cols_to_pull = ["__row_id__"]
+    if ft_goals_col:  cols_to_pull.append(ft_goals_col)
+    if ft_winner_col: cols_to_pull.append(ft_winner_col)
+    base = df[cols_to_pull].copy()
+
+    # Avoid merge suffixes by dropping any colliding columns from the picks first
+    p = picks.copy()
+    for c in [ft_goals_col, ft_winner_col]:
+        if c and c in p.columns:
+            p.drop(columns=[c], inplace=True)
+
+    # Merge back results
+    j = p.merge(base, on="__row_id__", how="left", suffixes=("", "_res"))
+
+    # After merge, figure out the actual column names present
+    gcol = None
+    wcol = None
+    if ft_goals_col:
+        gcol = ft_goals_col if ft_goals_col in j.columns else f"{ft_goals_col}_res"
+    if ft_winner_col:
+        wcol = ft_winner_col if ft_winner_col in j.columns else f"{ft_winner_col}_res"
+
+    # Compute win flags
+    win = pd.Series(False, index=j.index)
+
+    # If we have total-goals, that's direct for Over 2.5
+    if strategy.startswith("Over 2.5") and gcol and gcol in j.columns:
+        win = pd.to_numeric(j[gcol], errors="coerce").fillna(-1) >= 3
+
+    # If we have FT winner, use it for the other strategies (and as fallback)
+    if wcol and wcol in j.columns:
+        w = j[wcol].astype(str).str.strip().str.lower()
+        if strategy == "Lay the Draw":
+            win = win | (w != "draw")
+        elif strategy == "Back the Away":
+            win = win | w.isin({"away", "a", "2"})
+        elif strategy == "Home Fav":
+            win = win | w.isin({"home", "h", "1"})
+
+    wins   = int(win.sum())
+    losses = int(n - wins) if win.notna().all() else None
+    strike = (wins / n * 100.0) if n > 0 else None
+    return n, wins, losses, strike
+    """
+    Return (tips, wins, losses, strike%) for a given set of picks.
+    Strategy is used to evaluate the outcome if we only have FT winner.
+    """
+    n = len(picks)
+    if n == 0:
+        return 0, 0, 0, 0.0
+
+    ft_goals_col, ft_winner_col = get_ft_columns(df)
+    if ft_goals_col is None and ft_winner_col is None:
+        # No results available yet
+        return n, None, None, None
+
     # Join picks back to the original results using the row id
     cols_to_pull = ["__row_id__"]
     if ft_goals_col:  cols_to_pull.append(ft_goals_col)
