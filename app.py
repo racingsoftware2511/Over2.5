@@ -1,3 +1,4 @@
+# app.py
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -51,29 +52,27 @@ def add_kickoff(frame, col_date, col_time):
     return frame
 
 def normalize_pct(series: pd.Series) -> pd.Series:
+    """Force values to [0,100] as % (accept 0–1, 0–100, or 0–10000)."""
     s = pd.to_numeric(series, errors="coerce")
     def fix(v):
         if pd.isna(v): return v
         v = float(v)
-        if v <= 1.0: v *= 100.0   # proportions → %
+        if v <= 1.0: v *= 100.0
         while v > 100.0: v /= 10.0
         return v
     return s.map(fix)
 
 # --- Pretty number formats for UI tables (no effect on CSV files) ---
 FORMAT_MAP = {
-    # Odds
     "O25_odds_Z": "{:.2f}",
     "HomeOdds": "{:.2f}",
     "AwayOdds_M": "{:.2f}",
     "DrawOdds_P": "{:.2f}",
-    # Model/goal metrics
     "CombinedGS_BP": "{:.1f}",
     "Combined25_BQ": "{:.1f}",
     "poi_h_CI": "{:.0f}",
     "poi_a_CJ": "{:.0f}",
     "poi_gap_signed": "{:.0f}",
-    # Shares / ratings
     "Attack_H_CE": "{:.0f}",
     "Attack_A_CF": "{:.0f}",
     "Strength_H_CC": "{:.0f}",
@@ -82,7 +81,6 @@ FORMAT_MAP = {
     "Defense_H_CG": "{:.0f}",
 }
 
-# --- Outcome helpers (for UI coloring / combined XLSX) ---
 def parse_ft_to_goals(ft_str):
     """Parse '2-1' or '2:1' -> (2,1)."""
     if not isinstance(ft_str, str):
@@ -117,22 +115,20 @@ def xl_col_letter(idx):
         letters = chr(65 + r) + letters
     return letters
 
-# --- UI row coloring helper (tabs 1–5 only; CSVs remain plain) ---
 def make_outcome_row_colorizer(strategy: str, ft_colname: str):
-    """Return a function(row) -> list[css] that colors a row WIN=green, LOSE=red."""
+    """Row styler coloring by outcome."""
     def _f(row):
         ft = row.get(ft_colname)
         outcome = decide_outcome(strategy, ft) if ft_colname else None
         if outcome == "WIN":
-            return ["background-color: #e6ffea"] * len(row)  # soft green
+            return ["background-color: #e6ffea"] * len(row)
         if outcome == "LOSE":
-            return ["background-color: #ffecec"] * len(row)  # soft red
+            return ["background-color: #ffecec"] * len(row)
         return [""] * len(row)
     return _f
 
-# ---------- Results summary helpers ----------
 def get_ft_columns(df):
-    """Try to locate final result columns (goals and winner) with flexible names."""
+    """Try to locate result columns (goals and winner) with flexible names."""
     ft_goals = pick_col(df, [
         "FT Goals", "Total Goals FT", "Goals FT", "Final Goals", "Full Time Goals"
     ])
@@ -144,48 +140,39 @@ def get_ft_columns(df):
 def summarize_picks(picks: pd.DataFrame, df: pd.DataFrame, strategy: str):
     """
     Return (tips, wins, losses, strike%) for a given set of picks.
-    Strategy is used to evaluate the outcome if we only have FT winner.
+    If __row_id__ is missing, we only return tip count; W/L are None.
     """
     n = len(picks)
     if n == 0:
         return 0, 0, 0, 0.0
 
-    ft_goals_col, ft_winner_col = get_ft_columns(df)
-    if ft_goals_col is None and ft_winner_col is None:
-        # No results available yet
+    if "__row_id__" not in picks.columns:
         return n, None, None, None
 
-    # Build the base (only row id + result columns from the source DF)
+    ft_goals_col, ft_winner_col = get_ft_columns(df)
+    if ft_goals_col is None and ft_winner_col is None:
+        return n, None, None, None
+
     cols_to_pull = ["__row_id__"]
     if ft_goals_col:  cols_to_pull.append(ft_goals_col)
     if ft_winner_col: cols_to_pull.append(ft_winner_col)
     base = df[cols_to_pull].copy()
 
-    # Avoid merge suffixes by dropping any colliding columns from the picks first
     p = picks.copy()
     for c in [ft_goals_col, ft_winner_col]:
         if c and c in p.columns:
             p.drop(columns=[c], inplace=True)
 
-    # Merge back results
     j = p.merge(base, on="__row_id__", how="left", suffixes=("", "_res"))
 
-    # After merge, figure out the actual column names present
-    gcol = None
-    wcol = None
-    if ft_goals_col:
-        gcol = ft_goals_col if ft_goals_col in j.columns else f"{ft_goals_col}_res"
-    if ft_winner_col:
-        wcol = ft_winner_col if ft_winner_col in j.columns else f"{ft_winner_col}_res"
+    gcol = ft_goals_col if (ft_goals_col and ft_goals_col in j.columns) else (f"{ft_goals_col}_res" if ft_goals_col else None)
+    wcol = ft_winner_col if (ft_winner_col and ft_winner_col in j.columns) else (f"{ft_winner_col}_res" if ft_winner_col else None)
 
-    # Compute win flags
     win = pd.Series(False, index=j.index)
 
-    # If we have total-goals, that's direct for Over 2.5
     if strategy.startswith("Over 2.5") and gcol and gcol in j.columns:
         win = pd.to_numeric(j[gcol], errors="coerce").fillna(-1) >= 3
 
-    # If we have FT winner, use it for the other strategies (and as fallback)
     if wcol and wcol in j.columns:
         w = j[wcol].astype(str).str.strip().str.lower()
         if strategy == "Lay the Draw":
@@ -199,52 +186,8 @@ def summarize_picks(picks: pd.DataFrame, df: pd.DataFrame, strategy: str):
     losses = int(n - wins) if win.notna().all() else None
     strike = (wins / n * 100.0) if n > 0 else None
     return n, wins, losses, strike
-    """
-    Return (tips, wins, losses, strike%) for a given set of picks.
-    Strategy is used to evaluate the outcome if we only have FT winner.
-    """
-    n = len(picks)
-    if n == 0:
-        return 0, 0, 0, 0.0
 
-    ft_goals_col, ft_winner_col = get_ft_columns(df)
-    if ft_goals_col is None and ft_winner_col is None:
-        # No results available yet
-        return n, None, None, None
-
-    # Join picks back to the original results using the row id
-    cols_to_pull = ["__row_id__"]
-    if ft_goals_col:  cols_to_pull.append(ft_goals_col)
-    if ft_winner_col: cols_to_pull.append(ft_winner_col)
-
-    base = df[cols_to_pull].copy()
-    j = picks.merge(base, on="__row_id__", how="left")
-
-    # Compute a boolean "win" per row depending on the strategy
-    win = pd.Series(False, index=j.index)
-
-    # If we have total-goals, that's the most direct for Over 2.5
-    if strategy in {"Over 2.5", "Over 2.5 (Z/BP/signed gap)"} and ft_goals_col:
-        win = pd.to_numeric(j[ft_goals_col], errors="coerce").fillna(-1) >= 3
-
-    # If we only have FT winner, fall back to labels
-    if ft_winner_col:
-        w = j[ft_winner_col].astype(str).str.strip().str.lower()
-        if strategy == "Lay the Draw":
-            win = win | (w != "draw")
-        elif strategy == "Back the Away":
-            win = win | w.isin({"away", "a", "2"})
-        elif strategy in {"Home Fav"}:
-            win = win | w.isin({"home", "h", "1"})
-        # For Over 2.5 with only FT winner we can't infer goals—leave as-is
-
-    wins   = int(win.sum())
-    losses = int(n - wins) if win.notna().all() else None
-    strike = (wins / n * 100.0) if wins is not None and n > 0 else None
-    return n, wins, losses, strike
-
-def show_summary(n, wins, losses, strike):
-    """Compact 4-metric bar."""
+def show_summary(n, wins, losses, strike, key_prefix="sum"):
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("Tips", n if n is not None else "N/A")
     c2.metric("Wins", wins if wins is not None else "N/A")
@@ -270,14 +213,14 @@ df.columns = df.columns.astype(str).str.strip()
 with st.expander("Detected columns in your sheet"):
     st.write(df.columns.tolist())
 
-# Common display columns (optional)
+# Common display columns
 col_home    = pick_col(df, ["Home", "Home Team"])
 col_away    = pick_col(df, ["Away", "Away Team"])
 col_country = pick_col(df, ["Country", "League", "Competition"])
 col_date    = pick_col(df, ["Date"])
 col_time    = pick_col(df, ["Time"])
 
-# Detect HT and FT once (support common aliases)
+# HT / FT columns
 col_ht = pick_col(df, ["HT","Half-Time","Half Time","Half-Time Score","Half Time Score","HT Score"])
 col_ft = pick_col(df, ["Final Score","FT","Full-Time","Full Time","Full-Time Score","Full Time Score","FT Score"])
 
@@ -306,7 +249,7 @@ with tab1:
 
     needed_max = max(IDX_Z, IDX_BP, IDX_BQ, IDX_CE, IDX_CF)
     if len(df.columns) <= needed_max:
-        st.error("Not enough columns for Z / BP / BQ / CE / CF. Please export the full SPM file.")
+        st.error("Not enough columns for Z / BP / BQ / CE / CF.")
     else:
         col_Z  = df.columns[IDX_Z]
         col_BP = df.columns[IDX_BP]
@@ -334,8 +277,8 @@ with tab1:
         show_cols = []
         if col_country: show_cols.append(col_country)
         show_cols += ["Kickoff"]
-        if col_ht: show_cols.append(col_ht)   # HT after Kickoff
-        if col_ft: show_cols.append(col_ft)   # FT after HT
+        if col_ht: show_cols.append(col_ht)
+        if col_ft: show_cols.append(col_ft)
         if col_home: show_cols.append(col_home)
         if col_away: show_cols.append(col_away)
         show_cols += ["O25_odds_Z", "CombinedGS_BP", "Combined25_BQ", "Attack_H_CE", "Attack_A_CF"]
@@ -344,36 +287,28 @@ with tab1:
             st.warning("No matches met the Over 2.5 rules.")
         else:
             tips = tips.sort_values(["Combined25_BQ", "CombinedGS_BP"], ascending=False).reset_index(drop=True)
-            top_n = st.slider("How many tips to show?", 5, 50, 10)
+            top_n = st.slider("How many tips to show?", 5, 50, 10, key="t1_slider")
             top = tips.head(top_n)
 
             st.success(f"SPM Tips (Over 2.5) — Top {len(top)}")
-            display1 = top[show_cols]
+            display1 = top[["__row_id__", *show_cols]]  # keep row_id in table (hidden in UI via style)
+            out1 = display1.drop(columns=["__row_id__"], errors="ignore")
             if col_ft:
-                styler1 = display1.style.apply(
-                    make_outcome_row_colorizer("Over 2.5", col_ft), axis=1
-                ).format(FORMAT_MAP, na_rep="")
+                styler1 = out1.style.apply(make_outcome_row_colorizer("Over 2.5", col_ft), axis=1).format(FORMAT_MAP, na_rep="")
                 st.dataframe(styler1, use_container_width=True, height=500)
             else:
-                st.dataframe(display1.style.format(FORMAT_MAP, na_rep=""), use_container_width=True, height=500)
+                st.dataframe(out1.style.format(FORMAT_MAP, na_rep=""), use_container_width=True, height=500)
 
-            # Summary
-            n, wins, losses, strike = summarize_picks(
-                top.assign(Strategy="Over 2.5"), df, "Over 2.5"
-            )
-            show_summary(n, wins, losses, strike)
+            n, wins, losses, strike = summarize_picks(display1, df, "Over 2.5")
+            show_summary(n, wins, losses, strike, key_prefix="t1")
 
-            # CSV
-            csv1 = top[show_cols].to_csv(index=False).encode("utf-8")
-            st.download_button(
-                "📥 Download Over 2.5 SPM Tips (CSV)",
-                data=csv1,
-                file_name="SPM_Tips_Over25.csv",
-                mime="text/csv",
-                key="dl_over25_csv_t1",
-            )
+            csv1 = out1.to_csv(index=False).encode("utf-8")
+            st.download_button("📥 Download Over 2.5 SPM Tips (CSV)", data=csv1,
+                               file_name="SPM_Tips_Over25.csv", mime="text/csv",
+                               key="dl_over25_csv_t1")
 
-            st.session_state["tips_over25"] = top[show_cols].assign(Strategy="Over 2.5")
+            # Save with row_id for combined/summary later
+            st.session_state["tips_over25"] = display1.assign(Strategy="Over 2.5")
 
 # --------------------------------------------------------------------
 # TAB 2 — Home Fav
@@ -382,14 +317,13 @@ with tab2:
     st.subheader("Home Fav Tips (Strategy2)")
 
     col_home_odds = pick_col(df, ["Home Back(T0)", "Home Odds", "Home Back(TO)", "Home Back"])
-
     IDX_BU = excel_col_to_idx("BU")
     IDX_CE = excel_col_to_idx("CE")
     IDX_CO = excel_col_to_idx("CO")
 
     needed_max = max(IDX_BU, IDX_CE, IDX_CO)
     if len(df.columns) <= needed_max:
-        st.error("Not enough columns for BU / CE / CO. Please export the full SPM file.")
+        st.error("Not enough columns for BU / CE / CO.")
     else:
         col_BU = df.columns[IDX_BU]
         col_CE = df.columns[IDX_CE]
@@ -427,32 +361,23 @@ with tab2:
             top2 = tips2.head(10)
 
             st.success(f"SPM Tips (Home Fav) — Top {len(top2)}")
-            display2 = top2[show2]
+            display2 = top2[["__row_id__", *show2]]
+            out2 = display2.drop(columns=["__row_id__"], errors="ignore")
             if col_ft:
-                styler2 = display2.style.apply(
-                    make_outcome_row_colorizer("Home Fav", col_ft), axis=1
-                ).format(FORMAT_MAP, na_rep="")
+                styler2 = out2.style.apply(make_outcome_row_colorizer("Home Fav", col_ft), axis=1).format(FORMAT_MAP, na_rep="")
                 st.dataframe(styler2, use_container_width=True, height=500)
             else:
-                st.dataframe(display2.style.format(FORMAT_MAP, na_rep=""), use_container_width=True, height=500)
+                st.dataframe(out2.style.format(FORMAT_MAP, na_rep=""), use_container_width=True, height=500)
 
-            # Summary
-            n, wins, losses, strike = summarize_picks(
-                top2.assign(Strategy="Home Fav"), df, "Home Fav"
-            )
-            show_summary(n, wins, losses, strike)
+            n, wins, losses, strike = summarize_picks(display2, df, "Home Fav")
+            show_summary(n, wins, losses, strike, key_prefix="t2")
 
-            # CSV
-            csv2 = top2[show2].to_csv(index=False).encode("utf-8")
-            st.download_button(
-                "📥 Download Home Fav SPM Tips (CSV)",
-                data=csv2,
-                file_name="SPM_Tips_HomeFav.csv",
-                mime="text/csv",
-                key="dl_homefav_csv_t2",
-            )
+            csv2 = out2.to_csv(index=False).encode("utf-8")
+            st.download_button("📥 Download Home Fav SPM Tips (CSV)", data=csv2,
+                               file_name="SPM_Tips_HomeFav.csv", mime="text/csv",
+                               key="dl_homefav_csv_t2")
 
-            st.session_state["tips_homefav"] = top2[show2].assign(Strategy="Home Fav")
+            st.session_state["tips_homefav"] = display2.assign(Strategy="Home Fav")
 
 # --------------------------------------------------------------------
 # TAB 3 — Over 2.5 (signed Poisson gap)
@@ -460,10 +385,10 @@ with tab2:
 with tab3:
     st.subheader("Over 2.5 (Strategy3)")
 
-    IDX_Z  = excel_col_to_idx("Z")
-    IDX_BP = excel_col_to_idx("BP")
-    IDX_CI = excel_col_to_idx("CI")
-    IDX_CJ = excel_col_to_idx("CJ")
+    IDX_Z  = excel_col_to_idx("Z")   # O2.5 odds
+    IDX_BP = excel_col_to_idx("BP")  # Combined GS
+    IDX_CI = excel_col_to_idx("CI")  # Poisson H share
+    IDX_CJ = excel_col_to_idx("CJ")  # Poisson A share
 
     needed_max = max(IDX_Z, IDX_BP, IDX_CI, IDX_CJ)
     if len(df.columns) <= needed_max:
@@ -505,44 +430,33 @@ with tab3:
             top3 = tips3.head(20)
 
             st.success(f"Over 2.5 (signed gap) — {len(top3)} picks")
-            display3 = top3[show3]
+            display3 = top3[["__row_id__", *show3]]
+            out3 = display3.drop(columns=["__row_id__"], errors="ignore")
             if col_ft:
-                styler3 = display3.style.apply(
-                    make_outcome_row_colorizer("Over 2.5 (Z/BP/signed gap)", col_ft), axis=1
-                ).format(FORMAT_MAP, na_rep="")
+                styler3 = out3.style.apply(make_outcome_row_colorizer("Over 2.5", col_ft), axis=1).format(FORMAT_MAP, na_rep="")
                 st.dataframe(styler3, use_container_width=True, height=500)
             else:
-                st.dataframe(display3.style.format(FORMAT_MAP, na_rep=""), use_container_width=True, height=500)
+                st.dataframe(out3.style.format(FORMAT_MAP, na_rep=""), use_container_width=True, height=500)
 
-            # Summary
-            n, wins, losses, strike = summarize_picks(
-                top3.assign(Strategy="Over 2.5 (Z/BP/signed gap)"), df, "Over 2.5 (Z/BP/signed gap)"
-            )
-            show_summary(n, wins, losses, strike)
+            n, wins, losses, strike = summarize_picks(display3, df, "Over 2.5")
+            show_summary(n, wins, losses, strike, key_prefix="t3")
 
-            # CSV
-            csv3 = top3[show3].to_csv(index=False).encode("utf-8")
-            st.download_button(
-                "📥 Download Over 2.5 (signed Poisson gap) CSV",
-                data=csv3,
-                file_name="SPM_Over25_signed_gap.csv",
-                mime="text/csv",
-                key="dl_over25_signed_t3"
-            )
+            csv3 = out3.to_csv(index=False).encode("utf-8")
+            st.download_button("📥 Download Over 2.5 (signed Poisson gap) CSV", data=csv3,
+                               file_name="SPM_Over25_signed_gap.csv", mime="text/csv",
+                               key="dl_over25_signed_t3")
 
-            st.session_state["tips_over25_gap"] = top3[show3].assign(
-                Strategy="Over 2.5 (Z/BP/signed gap)"
-            )
+            st.session_state["tips_over25_gap"] = display3.assign(Strategy="Over 2.5 (Z/BP/signed gap)")
 
 # --------------------------------------------------------------------
-# TAB 4 — Lay the Draw
+# TAB 4 — Lay the Draw (updated rules)
 # --------------------------------------------------------------------
 with tab4:
     st.subheader("Lay the Draw (Strategy4)")
 
-    IDX_CE = excel_col_to_idx("CE")
-    IDX_CC = excel_col_to_idx("CC")
-    IDX_P  = excel_col_to_idx("P")
+    IDX_CE = excel_col_to_idx("CE")  # Attack H
+    IDX_CC = excel_col_to_idx("CC")  # Strength H
+    IDX_P  = excel_col_to_idx("P")   # Draw odds
 
     needed_max = max(IDX_CE, IDX_CC, IDX_P)
     if len(df.columns) <= needed_max:
@@ -581,43 +495,34 @@ with tab4:
             top4 = ltd.head(20)
 
             st.success(f"Lay the Draw — {len(top4)} picks")
-            display4 = top4[show4]
+            display4 = top4[["__row_id__", *show4]]
+            out4 = display4.drop(columns=["__row_id__"], errors="ignore")
             if col_ft:
-                styler4 = display4.style.apply(
-                    make_outcome_row_colorizer("Lay the Draw", col_ft), axis=1
-                ).format(FORMAT_MAP, na_rep="")
+                styler4 = out4.style.apply(make_outcome_row_colorizer("Lay the Draw", col_ft), axis=1).format(FORMAT_MAP, na_rep="")
                 st.dataframe(styler4, use_container_width=True, height=500)
             else:
-                st.dataframe(display4.style.format(FORMAT_MAP, na_rep=""), use_container_width=True, height=500)
+                st.dataframe(out4.style.format(FORMAT_MAP, na_rep=""), use_container_width=True, height=500)
 
-            # Summary
-            n, wins, losses, strike = summarize_picks(
-                top4.assign(Strategy="Lay the Draw"), df, "Lay the Draw"
-            )
-            show_summary(n, wins, losses, strike)
+            n, wins, losses, strike = summarize_picks(display4, df, "Lay the Draw")
+            show_summary(n, wins, losses, strike, key_prefix="t4")
 
-            # CSV
-            csv4 = top4[show4].to_csv(index=False).encode("utf-8")
-            st.download_button(
-                "📥 Download Lay the Draw CSV",
-                data=csv4,
-                file_name="SPM_LayDraw.csv",
-                mime="text/csv",
-                key="dl_ltd_csv_t4",
-            )
+            csv4 = out4.to_csv(index=False).encode("utf-8")
+            st.download_button("📥 Download Lay the Draw CSV", data=csv4,
+                               file_name="SPM_LayDraw.csv", mime="text/csv",
+                               key="dl_ltd_csv_t4")
 
-            st.session_state["tips_lay_draw"] = top4[show4].assign(Strategy="Lay the Draw")
+            st.session_state["tips_lay_draw"] = display4.assign(Strategy="Lay the Draw")
 
 # --------------------------------------------------------------------
-# TAB 5 — Back the Away
+# TAB 5 — Back the Away (updated rules incl. away odds any)
 # --------------------------------------------------------------------
 with tab5:
     st.subheader("Back the Away (Strategy5)")
 
-    IDX_CF = excel_col_to_idx("CF")
-    IDX_CG = excel_col_to_idx("CG")
-    IDX_CP = excel_col_to_idx("CP")
-    IDX_M  = excel_col_to_idx("M")
+    IDX_CF = excel_col_to_idx("CF")  # Attack A
+    IDX_CG = excel_col_to_idx("CG")  # Defense H
+    IDX_CP = excel_col_to_idx("CP")  # Wins A
+    IDX_M  = excel_col_to_idx("M")   # Away odds (can be any number)
 
     needed_max = max(IDX_CF, IDX_CG, IDX_CP, IDX_M)
     if len(df.columns) <= needed_max:
@@ -658,32 +563,23 @@ with tab5:
             top5 = backaway.head(20)
 
             st.success(f"Back the Away — {len(top5)} picks")
-            display5 = top5[show5]
+            display5 = top5[["__row_id__", *show5]]
+            out5 = display5.drop(columns=["__row_id__"], errors="ignore")
             if col_ft:
-                styler5 = display5.style.apply(
-                    make_outcome_row_colorizer("Back the Away", col_ft), axis=1
-                ).format(FORMAT_MAP, na_rep="")
+                styler5 = out5.style.apply(make_outcome_row_colorizer("Back the Away", col_ft), axis=1).format(FORMAT_MAP, na_rep="")
                 st.dataframe(styler5, use_container_width=True, height=500)
             else:
-                st.dataframe(display5.style.format(FORMAT_MAP, na_rep=""), use_container_width=True, height=500)
+                st.dataframe(out5.style.format(FORMAT_MAP, na_rep=""), use_container_width=True, height=500)
 
-            # Summary
-            n, wins, losses, strike = summarize_picks(
-                top5.assign(Strategy="Back the Away"), df, "Back the Away"
-            )
-            show_summary(n, wins, losses, strike)
+            n, wins, losses, strike = summarize_picks(display5, df, "Back the Away")
+            show_summary(n, wins, losses, strike, key_prefix="t5")
 
-            # CSV
-            csv5 = top5[show5].to_csv(index=False).encode("utf-8")
-            st.download_button(
-                "📥 Download Back the Away CSV",
-                data=csv5,
-                file_name="SPM_BackAway.csv",
-                mime="text/csv",
-                key="dl_backaway_csv_t5",
-            )
+            csv5 = out5.to_csv(index=False).encode("utf-8")
+            st.download_button("📥 Download Back the Away CSV", data=csv5,
+                               file_name="SPM_BackAway.csv", mime="text/csv",
+                               key="dl_backaway_csv_t5")
 
-            st.session_state["tips_back_away"] = top5[show5].assign(Strategy="Back the Away")
+            st.session_state["tips_back_away"] = display5.assign(Strategy="Back the Away")
 
 # =========================
 # Combined Download
@@ -720,65 +616,48 @@ if pieces:
     all_cols = sorted(set().union(*[p.columns for p in pieces]))
     combined = pd.concat([p.reindex(columns=all_cols) for p in pieces], ignore_index=True)
 
-    # Front order & drop raw Home/Away if Match exists
+    # Reorder: Strategy, Match, Kickoff, HT, FT, Outcome, then rest
     front = [c for c in ["Strategy","Match","Kickoff","Half-Time Score","Full-Time Score"] if c in combined.columns]
     drop_raw = {"Home","Away"} if "Match" in front else set()
     rest = [c for c in combined.columns if c not in front and c not in drop_raw]
     combined = combined[front + rest]
 
-    # Outcome
+    # Outcome column
     if "Full-Time Score" in combined.columns and "Strategy" in combined.columns:
-        combined["Outcome"] = combined.apply(
-            lambda r: decide_outcome(r.get("Strategy"), r.get("Full-Time Score")),
-            axis=1
-        )
+        combined["Outcome"] = combined.apply(lambda r: decide_outcome(r.get("Strategy"), r.get("Full-Time Score")), axis=1)
         desired = [c for c in ["Strategy","Match","Kickoff","Half-Time Score","Full-Time Score","Outcome"] if c in combined.columns]
         the_rest = [c for c in combined.columns if c not in desired]
         combined = combined[desired + the_rest]
     else:
         combined["Outcome"] = None
 
-    # Optional overall summary (best effort)
-    n_all, w_all, l_all, sr_all = summarize_picks(combined, df, "mixed")
-    show_summary(n_all, w_all, l_all, sr_all)
-
-    # UI colored preview + number formatting
-    def _row_colorizer(row):
-        color = ""
-        if row.get("Outcome") == "WIN":
-            color = "background-color: #e6ffea"
-        elif row.get("Outcome") == "LOSE":
-            color = "background-color: #ffecec"
-        return [color] * len(row)
-
-    styled = combined.style.apply(_row_colorizer, axis=1).format(FORMAT_MAP, na_rep="")
-
-    if combined.empty:
-        st.info("No rows to download yet — generate tips in any tab above.")
+    # Overall summary (only if row ids survived)
+    if "__row_id__" in combined.columns:
+        n_all, w_all, l_all, sr_all = summarize_picks(combined, df, "mixed")
     else:
-        # CSV (plain)
-        csv_all = combined.to_csv(index=False).encode("utf-8")
-        st.download_button(
-            "📥 Download SPM Tips – All Strategies (CSV)",
-            data=csv_all,
-            file_name="SPM_Tips_All_Strategies.csv",
-            mime="text/csv",
-            key="dl_all_csv_main",
-        )
+        n_all, w_all, l_all, sr_all = len(combined), None, None, None
+    show_summary(n_all, w_all, l_all, sr_all, key_prefix="all")
 
-        # Colored XLSX
-        out = BytesIO()
-        with pd.ExcelWriter(out, engine="xlsxwriter") as writer:
-            combined.to_excel(writer, index=False, sheet_name="SPM Tips")
-            wb  = writer.book
-            ws  = writer.sheets["SPM Tips"]
-            nrows, ncols = combined.shape
-            green = wb.add_format({"bg_color": "#C6EFCE"})
-            red   = wb.add_format({"bg_color": "#FFC7CE"})
+    # CSV
+    csv_all = combined.drop(columns=["__row_id__"], errors="ignore").to_csv(index=False).encode("utf-8")
+    st.download_button("📥 Download SPM Tips – All Strategies (CSV)", data=csv_all,
+                       file_name="SPM_Tips_All_Strategies.csv", mime="text/csv",
+                       key="dl_all_csv_main")
 
-            out_idx = combined.columns.get_loc("Outcome")
+    # Colored XLSX
+    out = BytesIO()
+    export_df = combined.drop(columns=["__row_id__"], errors="ignore")
+    with pd.ExcelWriter(out, engine="xlsxwriter") as writer:
+        export_df.to_excel(writer, index=False, sheet_name="SPM Tips")
+        wb  = writer.book
+        ws  = writer.sheets["SPM Tips"]
+        nrows, ncols = export_df.shape
+        green = wb.add_format({"bg_color": "#C6EFCE"})
+        red   = wb.add_format({"bg_color": "#FFC7CE"})
+        if "Outcome" in export_df.columns:
+            out_idx = export_df.columns.get_loc("Outcome")
             out_col_letter = xl_col_letter(out_idx)
-            start_row = 1  # first data row
+            start_row = 1
             ws.conditional_format(start_row, 0, nrows, ncols-1, {
                 "type": "formula",
                 "criteria": f"=${out_col_letter}{start_row+1}=\"WIN\"",
@@ -790,14 +669,20 @@ if pieces:
                 "format": red
             })
 
-        st.download_button(
-            "📗 Download Colored Excel (XLSX)",
-            data=out.getvalue(),
-            file_name="SPM_Tips_All_Strategies_colored.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            key="dl_all_xlsx_colored",
-        )
+    st.download_button("📗 Download Colored Excel (XLSX)", data=out.getvalue(),
+                       file_name="SPM_Tips_All_Strategies_colored.xlsx",
+                       mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                       key="dl_all_xlsx_colored")
 
-        st.dataframe(styled, use_container_width=True, height=500)
+    # UI preview
+    def _row_colorizer(row):
+        color = ""
+        if row.get("Outcome") == "WIN":
+            color = "background-color: #e6ffea"
+        elif row.get("Outcome") == "LOSE":
+            color = "background-color: #ffecec"
+        return [color] * len(row)
+    st.dataframe(export_df.style.apply(_row_colorizer, axis=1).format(FORMAT_MAP, na_rep=""),
+                 use_container_width=True, height=500)
 else:
     st.info("Generate tips in any tab above to enable the combined download.")
