@@ -140,51 +140,61 @@ def get_ft_columns(df):
 def summarize_picks(picks: pd.DataFrame, df: pd.DataFrame, strategy: str):
     """
     Return (tips, wins, losses, strike%) for a given set of picks.
-    If __row_id__ is missing, we only return tip count; W/L are None.
+    Works with a single strategy (e.g. "Over 2.5") or "mixed" where
+    picks has a 'Strategy' column. Uses the FT score string (2-1) if present.
     """
     n = len(picks)
     if n == 0:
         return 0, 0, 0, 0.0
 
-    if "__row_id__" not in picks.columns:
+    # We need row ids to join picks back to the original DF
+    if "__row_id__" not in picks.columns or "__row_id__" not in df.columns:
         return n, None, None, None
 
-    ft_goals_col, ft_winner_col = get_ft_columns(df)
-    if ft_goals_col is None and ft_winner_col is None:
-        return n, None, None, None
+    # Try to find a *score* column (2-1 style) in the source DF
+    ft_score_col = pick_col(df, [
+        "Final Score", "FT", "Full-Time", "Full Time",
+        "Full-Time Score", "Full Time Score", "FT Score"
+    ])
+    if ft_score_col is None:
+        # Try the "goals total" column as a fallback (less ideal for Over 2.5 only)
+        ft_goals_col = pick_col(df, [
+            "FT Goals", "Total Goals FT", "Goals FT", "Final Goals", "Full Time Goals"
+        ])
+        if ft_goals_col is None:
+            return n, None, None, None
+        base = df[["__row_id__", ft_goals_col]].copy()
+        j = picks.merge(base, on="__row_id__", how="left", suffixes=("", "_res"))
+        # Only Over 2.5 can be evaluated from total goals
+        if strategy.startswith("Over 2.5"):
+            win_mask = pd.to_numeric(j[ft_goals_col], errors="coerce").fillna(-1) >= 3
+            wins = int(win_mask.sum())
+            losses = int(n - wins)
+            strike = wins / n * 100.0 if n else 0.0
+            return n, wins, losses, strike
+        else:
+            return n, None, None, None
 
-    cols_to_pull = ["__row_id__"]
-    if ft_goals_col:  cols_to_pull.append(ft_goals_col)
-    if ft_winner_col: cols_to_pull.append(ft_winner_col)
-    base = df[cols_to_pull].copy()
+    # Preferred path: use FT *score string* and evaluate with decide_outcome
+    base = df[["__row_id__", ft_score_col]].copy()
+    j = picks.merge(base, on="__row_id__", how="left", suffixes=("", "_res"))
 
-    p = picks.copy()
-    for c in [ft_goals_col, ft_winner_col]:
-        if c and c in p.columns:
-            p.drop(columns=[c], inplace=True)
+    # Per-row strategy when summarizing the *combined* table
+    if strategy == "mixed" and "Strategy" in j.columns:
+        strat_series = j["Strategy"].astype(str)
+    else:
+        strat_series = pd.Series([strategy] * len(j), index=j.index)
 
-    j = p.merge(base, on="__row_id__", how="left", suffixes=("", "_res"))
+    score_series = j[ft_score_col].astype(str)
 
-    gcol = ft_goals_col if (ft_goals_col and ft_goals_col in j.columns) else (f"{ft_goals_col}_res" if ft_goals_col else None)
-    wcol = ft_winner_col if (ft_winner_col and ft_winner_col in j.columns) else (f"{ft_winner_col}_res" if ft_winner_col else None)
+    outcomes = []
+    for s, ft in zip(strat_series, score_series):
+        outcomes.append(decide_outcome(s, ft))
 
-    win = pd.Series(False, index=j.index)
-
-    if strategy.startswith("Over 2.5") and gcol and gcol in j.columns:
-        win = pd.to_numeric(j[gcol], errors="coerce").fillna(-1) >= 3
-
-    if wcol and wcol in j.columns:
-        w = j[wcol].astype(str).str.strip().str.lower()
-        if strategy == "Lay the Draw":
-            win = win | (w != "draw")
-        elif strategy == "Back the Away":
-            win = win | w.isin({"away", "a", "2"})
-        elif strategy == "Home Fav":
-            win = win | w.isin({"home", "h", "1"})
-
-    wins   = int(win.sum())
-    losses = int(n - wins) if win.notna().all() else None
-    strike = (wins / n * 100.0) if n > 0 else None
+    outcomes = pd.Series(outcomes, index=j.index)
+    wins = int((outcomes == "WIN").sum())
+    losses = int((outcomes == "LOSE").sum())
+    strike = wins / n * 100.0 if n else 0.0
     return n, wins, losses, strike
 
 def show_summary(n, wins, losses, strike, key_prefix="sum"):
