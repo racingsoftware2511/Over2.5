@@ -129,10 +129,8 @@ def make_outcome_row_colorizer(strategy: str, ft_colname: str):
             return ["background-color: #ffecec"] * len(row)  # soft red
         return [""] * len(row)
     return _f
-# Give every row a stable id so we can join picks back to the original rows
-# (put this right after you read the Excel, see step 2 below)
-# df["__row_id__"] = np.arange(len(df))
 
+# ---------- Results summary helpers ----------
 def get_ft_columns(df):
     """Try to locate final result columns (goals and winner) with flexible names."""
     ft_goals = pick_col(df, [
@@ -195,6 +193,7 @@ def show_summary(n, wins, losses, strike):
     c2.metric("Wins", wins if wins is not None else "N/A")
     c3.metric("Losses", losses if losses is not None else "N/A")
     c4.metric("Win %", f"{strike:.1f}%" if strike is not None else "N/A")
+
 # =========================
 # Upload
 # =========================
@@ -301,12 +300,14 @@ with tab1:
             else:
                 st.dataframe(display1.style.format(FORMAT_MAP, na_rep=""), use_container_width=True, height=500)
 
-            csv1 = top[show_cols].to_csv(index=False).encode("utf-8")
-            # after you create `top` (and before/after the download button, either is fine)
+            # Summary
             n, wins, losses, strike = summarize_picks(
-            top.assign(Strategy="Over 2.5"), df, "Over 2.5"
+                top.assign(Strategy="Over 2.5"), df, "Over 2.5"
             )
             show_summary(n, wins, losses, strike)
+
+            # CSV
+            csv1 = top[show_cols].to_csv(index=False).encode("utf-8")
             st.download_button(
                 "📥 Download Over 2.5 SPM Tips (CSV)",
                 data=csv1,
@@ -378,6 +379,13 @@ with tab2:
             else:
                 st.dataframe(display2.style.format(FORMAT_MAP, na_rep=""), use_container_width=True, height=500)
 
+            # Summary
+            n, wins, losses, strike = summarize_picks(
+                top2.assign(Strategy="Home Fav"), df, "Home Fav"
+            )
+            show_summary(n, wins, losses, strike)
+
+            # CSV
             csv2 = top2[show2].to_csv(index=False).encode("utf-8")
             st.download_button(
                 "📥 Download Home Fav SPM Tips (CSV)",
@@ -443,12 +451,19 @@ with tab3:
             display3 = top3[show3]
             if col_ft:
                 styler3 = display3.style.apply(
-                    make_outcome_row_colorizer("Over 2.5", col_ft), axis=1
+                    make_outcome_row_colorizer("Over 2.5 (Z/BP/signed gap)", col_ft), axis=1
                 ).format(FORMAT_MAP, na_rep="")
                 st.dataframe(styler3, use_container_width=True, height=500)
             else:
                 st.dataframe(display3.style.format(FORMAT_MAP, na_rep=""), use_container_width=True, height=500)
 
+            # Summary
+            n, wins, losses, strike = summarize_picks(
+                top3.assign(Strategy="Over 2.5 (Z/BP/signed gap)"), df, "Over 2.5 (Z/BP/signed gap)"
+            )
+            show_summary(n, wins, losses, strike)
+
+            # CSV
             csv3 = top3[show3].to_csv(index=False).encode("utf-8")
             st.download_button(
                 "📥 Download Over 2.5 (signed Poisson gap) CSV",
@@ -518,6 +533,13 @@ with tab4:
             else:
                 st.dataframe(display4.style.format(FORMAT_MAP, na_rep=""), use_container_width=True, height=500)
 
+            # Summary
+            n, wins, losses, strike = summarize_picks(
+                top4.assign(Strategy="Lay the Draw"), df, "Lay the Draw"
+            )
+            show_summary(n, wins, losses, strike)
+
+            # CSV
             csv4 = top4[show4].to_csv(index=False).encode("utf-8")
             st.download_button(
                 "📥 Download Lay the Draw CSV",
@@ -588,6 +610,13 @@ with tab5:
             else:
                 st.dataframe(display5.style.format(FORMAT_MAP, na_rep=""), use_container_width=True, height=500)
 
+            # Summary
+            n, wins, losses, strike = summarize_picks(
+                top5.assign(Strategy="Back the Away"), df, "Back the Away"
+            )
+            show_summary(n, wins, losses, strike)
+
+            # CSV
             csv5 = top5[show5].to_csv(index=False).encode("utf-8")
             st.download_button(
                 "📥 Download Back the Away CSV",
@@ -651,6 +680,10 @@ if pieces:
         combined = combined[desired + the_rest]
     else:
         combined["Outcome"] = None
+
+    # Optional overall summary (best effort)
+    n_all, w_all, l_all, sr_all = summarize_picks(combined, df, "mixed")
+    show_summary(n_all, w_all, l_all, sr_all)
 
     # UI colored preview + number formatting
     def _row_colorizer(row):
