@@ -129,7 +129,72 @@ def make_outcome_row_colorizer(strategy: str, ft_colname: str):
             return ["background-color: #ffecec"] * len(row)  # soft red
         return [""] * len(row)
     return _f
+# Give every row a stable id so we can join picks back to the original rows
+# (put this right after you read the Excel, see step 2 below)
+# df["__row_id__"] = np.arange(len(df))
 
+def get_ft_columns(df):
+    """Try to locate final result columns (goals and winner) with flexible names."""
+    ft_goals = pick_col(df, [
+        "FT Goals", "Total Goals FT", "Goals FT", "Final Goals", "Full Time Goals"
+    ])
+    ft_winner = pick_col(df, [
+        "Winner FT", "FT Winner", "Full Time Result", "Result FT", "Result"
+    ])
+    return ft_goals, ft_winner
+
+def summarize_picks(picks: pd.DataFrame, df: pd.DataFrame, strategy: str):
+    """
+    Return (tips, wins, losses, strike%) for a given set of picks.
+    Strategy is used to evaluate the outcome if we only have FT winner.
+    """
+    n = len(picks)
+    if n == 0:
+        return 0, 0, 0, 0.0
+
+    ft_goals_col, ft_winner_col = get_ft_columns(df)
+    if ft_goals_col is None and ft_winner_col is None:
+        # No results available yet
+        return n, None, None, None
+
+    # Join picks back to the original results using the row id
+    cols_to_pull = ["__row_id__"]
+    if ft_goals_col:  cols_to_pull.append(ft_goals_col)
+    if ft_winner_col: cols_to_pull.append(ft_winner_col)
+
+    base = df[cols_to_pull].copy()
+    j = picks.merge(base, on="__row_id__", how="left")
+
+    # Compute a boolean "win" per row depending on the strategy
+    win = pd.Series(False, index=j.index)
+
+    # If we have total-goals, that's the most direct for Over 2.5
+    if strategy in {"Over 2.5", "Over 2.5 (Z/BP/signed gap)"} and ft_goals_col:
+        win = pd.to_numeric(j[ft_goals_col], errors="coerce").fillna(-1) >= 3
+
+    # If we only have FT winner, fall back to labels
+    if ft_winner_col:
+        w = j[ft_winner_col].astype(str).str.strip().str.lower()
+        if strategy == "Lay the Draw":
+            win = win | (w != "draw")
+        elif strategy == "Back the Away":
+            win = win | w.isin({"away", "a", "2"})
+        elif strategy in {"Home Fav"}:
+            win = win | w.isin({"home", "h", "1"})
+        # For Over 2.5 with only FT winner we can't infer goals—leave as-is
+
+    wins   = int(win.sum())
+    losses = int(n - wins) if win.notna().all() else None
+    strike = (wins / n * 100.0) if wins is not None and n > 0 else None
+    return n, wins, losses, strike
+
+def show_summary(n, wins, losses, strike):
+    """Compact 4-metric bar."""
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Tips", n if n is not None else "N/A")
+    c2.metric("Wins", wins if wins is not None else "N/A")
+    c3.metric("Losses", losses if losses is not None else "N/A")
+    c4.metric("Win %", f"{strike:.1f}%" if strike is not None else "N/A")
 # =========================
 # Upload
 # =========================
@@ -139,6 +204,7 @@ if not uploaded:
 
 try:
     df = pd.read_excel(uploaded, sheet_name="Matches")
+    df["__row_id__"] = np.arange(len(df))
 except Exception as e:
     st.error(f"Could not open sheet **Matches**: {e}")
     st.stop()
@@ -236,6 +302,11 @@ with tab1:
                 st.dataframe(display1.style.format(FORMAT_MAP, na_rep=""), use_container_width=True, height=500)
 
             csv1 = top[show_cols].to_csv(index=False).encode("utf-8")
+            # after you create `top` (and before/after the download button, either is fine)
+            n, wins, losses, strike = summarize_picks(
+            top.assign(Strategy="Over 2.5"), df, "Over 2.5"
+            )
+            show_summary(n, wins, losses, strike)
             st.download_button(
                 "📥 Download Over 2.5 SPM Tips (CSV)",
                 data=csv1,
