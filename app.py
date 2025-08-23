@@ -19,17 +19,17 @@ def get_base64_of_image(img_path):
 
 try:
     banner_base64 = get_base64_of_image("spmlogo_main.png")
-    st.markdown(
-        f"""
+st.markdown(
+    """
+    <div style="text-align:center; margin-bottom:20px;">
         <a href="https://soccerpricemonitor.com/" target="_blank">
-            <img src="data:image/png;base64,{banner_base64}" style="width:100%;border-radius:8px;"/>
+            <img src="https://raw.githubusercontent.com/racingsoftware2511/Over2.5/main/spmlogo_main.png"
+                 style="width:30%; max-width:700px; height:auto;">
         </a>
-        """,
-        unsafe_allow_html=True
-    )
-except Exception:
-    st.warning("Banner image not found.")
-
+    </div>
+    """,
+    unsafe_allow_html=True,
+)
 # =========================
 # Branding (below banner)
 # =========================
@@ -43,20 +43,6 @@ st.markdown(
     unsafe_allow_html=True,
 )
 st.write("Upload your SPM Excel and pick a strategy to generate tips.")
-# =========================
-# Branding (with banner)
-# =========================
-st.markdown(
-    """
-    <div style="text-align:center; margin-bottom:20px;">
-        <a href="https://soccerpricemonitor.com/" target="_blank">
-            <img src="https://raw.githubusercontent.com/racingsoftware2511/Over2.5/main/spmlogo_main.png"
-                 style="width:30%; max-width:600px; height:auto;">
-        </a>
-    </div>
-    """,
-    unsafe_allow_html=True,
-)
 
 # =========================
 # Helpers
