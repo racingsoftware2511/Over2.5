@@ -12,29 +12,38 @@ st.set_page_config(layout="wide")
 # =========================
 # Banner with hyperlink
 # =========================
-def get_base64_of_image(img_path):
-    with open(img_path, "rb") as f:
-        data = f.read()
-    return base64.b64encode(data).decode()
+BANNER_LOCAL  = "spmlogo_main.png"
+BANNER_REMOTE = "https://raw.githubusercontent.com/racingsoftware2511/Over2.5/main/spmlogo_main.png"
+BANNER_LINK   = "https://soccerpricemonitor.com/"
 
+def image_to_data_uri(path: str) -> str:
+    """Return a data: URI for a local image (falls back to remote URL if missing)."""
+    with open(path, "rb") as f:
+        b64 = base64.b64encode(f.read()).decode("utf-8")
+    return f"data:image/png;base64,{b64}"
+
+# Prefer local image -> data URI; fall back to GitHub raw link
 try:
-    banner_base64 = get_base64_of_image("spmlogo_main.png")
+    banner_src = image_to_data_uri(BANNER_LOCAL)
+except Exception:
+    banner_src = BANNER_REMOTE
+
 st.markdown(
-    """
+    f"""
     <div style="text-align:center; margin-bottom:20px;">
-        <a href="https://soccerpricemonitor.com/" target="_blank">
-            <img src="https://raw.githubusercontent.com/racingsoftware2511/Over2.5/main/spmlogo_main.png"
-                 style="width:30%; max-width:700px; height:auto;">
+        <a href="{BANNER_LINK}" target="_blank">
+            <img src="{banner_src}" style="width:30%; max-width:700px; height:auto;">
         </a>
     </div>
     """,
     unsafe_allow_html=True,
 )
+
 # =========================
 # Branding (below banner)
 # =========================
 try:
-    st.image(Image.open("spm_logo.png"), width=180)
+    st.image(Image.open("spm_logo.png"), width=140)
 except Exception:
     pass
 
@@ -43,7 +52,6 @@ st.markdown(
     unsafe_allow_html=True,
 )
 st.write("Upload your SPM Excel and pick a strategy to generate tips.")
-
 # =========================
 # Helpers
 # =========================
