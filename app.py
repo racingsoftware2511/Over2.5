@@ -315,7 +315,6 @@ with tab1:
         tips = work.loc[filt].copy()
         total_qualified = len(tips)
 st.caption(f"✅ {total_qualified} matches meet the Over 2.5 rules.")
-
 show_all = st.toggle("Show all qualified matches", value=False)
         show_cols = []
         if col_country: show_cols.append(col_country)
