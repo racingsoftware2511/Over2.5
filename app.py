@@ -313,7 +313,10 @@ with tab1:
             (work["Attack_min"] >= 35.0)
         )
         tips = work.loc[filt].copy()
+        total_qualified = len(tips)
+st.caption(f"✅ {total_qualified} matches meet the Over 2.5 rules.")
 
+show_all = st.toggle("Show all qualified matches", value=False)
         show_cols = []
         if col_country: show_cols.append(col_country)
         show_cols += ["Kickoff"]
@@ -326,10 +329,14 @@ with tab1:
         if tips.empty:
             st.warning("No matches met the Over 2.5 rules.")
         else:
-            tips = tips.sort_values(["Combined25_BQ", "CombinedGS_BP"], ascending=False).reset_index(drop=True)
-            top_n = st.slider("How many tips to show?", 5, 50, 10, key="t1_slider")
-            top = tips.head(top_n)
+          tips = tips.sort_values(["Combined25_BQ", "CombinedGS_BP"], ascending=False).reset_index(drop=True)
 
+if show_all:
+    top = tips
+else:
+    # let the slider go up to the real total so the user can always include it
+    top_n = st.slider("How many tips to show?", 5, max(5, total_qualified), min(30, total_qualified))
+    top = tips.head(top_n)
             st.success(f"SPM Tips (Over 2.5) — Top {len(top)}")
             display1 = top[["__row_id__", *show_cols]]  # keep row_id in table (hidden in UI via style)
             out1 = display1.drop(columns=["__row_id__"], errors="ignore")
