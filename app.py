@@ -274,13 +274,13 @@ tab1, tab2, tab3, tab4, tab5 = st.tabs([
     "🚫 Lay the Draw",
     "✅ Back the Away"
 ])
-
 # --------------------------------------------------------------------
 # TAB 1 — Over 2.5
 # --------------------------------------------------------------------
 with tab1:
     st.subheader("Over 2.5 Tips (Strategy1)")
 
+    # Excel column indices we need
     IDX_Z  = excel_col_to_idx("Z")
     IDX_BP = excel_col_to_idx("BP")
     IDX_BQ = excel_col_to_idx("BQ")
@@ -291,31 +291,59 @@ with tab1:
     if len(df.columns) <= needed_max:
         st.error("Not enough columns for Z / BP / BQ / CE / CF.")
     else:
+        # Column names resolved from indices
         col_Z  = df.columns[IDX_Z]
         col_BP = df.columns[IDX_BP]
         col_BQ = df.columns[IDX_BQ]
         col_CE = df.columns[IDX_CE]
         col_CF = df.columns[IDX_CF]
 
+        # Build working frame
         work = df.copy()
         work["O25_odds_Z"]    = to_num(work[col_Z])
         work["CombinedGS_BP"] = to_num(work[col_BP])
         work["Combined25_BQ"] = normalize_pct(work[col_BQ])
-        work["Attack_H_CE"]   = to_num(work[col_CE])
-        work["Attack_A_CF"]   = to_num(work[col_CF])
-        work["Attack_min"]    = pd.concat([work["Attack_H_CE"], work["Attack_A_CF"]], axis=1).min(axis=1)
+        work["Attack_H_CE"]   = to_num(work[col_CE])  # 0–100 shares
+        work["Attack_A_CF"]   = to_num(work[col_CF])  # 0–100 shares
+        work["Attack_min"]    = pd.concat(
+            [work["Attack_H_CE"], work["Attack_A_CF"]], axis=1
+        ).min(axis=1)
+
         work = add_kickoff(work, col_date, col_time)
 
+        # Rules
         filt = (
-            work["O25_odds_Z"].between(1.40, 3.00, inclusive="both") &
-            (work["CombinedGS_BP"] >= 3.0) &
-            (work["Combined25_BQ"] >= 60.0) &
-            (work["Attack_min"] >= 35.0)
+            work["O25_odds_Z"].between(1.40, 3.00, inclusive="both")
+            & (work["CombinedGS_BP"] >= 3.0)
+            & (work["Combined25_BQ"] >= 60.0)
+            & (work["Attack_min"] >= 35.0)
         )
         tips = work.loc[filt].copy()
-        total_qualified = len(tips)
-st.caption(f"✅ {total_qualified} matches meet the Over 2.5 rules.")
-show_all = st.toggle("Show all qualified matches", value=False)
+
+        # Summary / UI controls
+        total_qualified = int(len(tips))
+        st.caption(f"✅ {total_qualified} matches meet the Over 2.5 rules.")
+        show_all = st.toggle("Show all qualified matches", value=False, key="t1_show_all")
+
+        # Sort strongest first
+        tips = tips.sort_values(
+            ["Combined25_BQ", "CombinedGS_BP"], ascending=False
+        ).reset_index(drop=True)
+
+        # Decide how many to show
+        if show_all or total_qualified <= 5:
+            top = tips
+        else:
+            top_n = st.slider(
+                "How many tips to show?",
+                min_value=5,
+                max_value=max(5, total_qualified),
+                value=min(10, total_qualified),
+                key="t1_topn",
+            )
+            top = tips.head(top_n)
+
+        # Columns to show (keep __row_id__ for summary/combined later)
         show_cols = []
         if col_country: show_cols.append(col_country)
         show_cols += ["Kickoff"]
@@ -323,39 +351,53 @@ show_all = st.toggle("Show all qualified matches", value=False)
         if col_ft: show_cols.append(col_ft)
         if col_home: show_cols.append(col_home)
         if col_away: show_cols.append(col_away)
-        show_cols += ["O25_odds_Z", "CombinedGS_BP", "Combined25_BQ", "Attack_H_CE", "Attack_A_CF"]
+        show_cols += [
+            "O25_odds_Z", "CombinedGS_BP", "Combined25_BQ",
+            "Attack_H_CE", "Attack_A_CF"
+        ]
 
-        if tips.empty:
+        if top.empty:
             st.warning("No matches met the Over 2.5 rules.")
         else:
-          tips = tips.sort_values(["Combined25_BQ", "CombinedGS_BP"], ascending=False).reset_index(drop=True)
+            st.success(f"SPM Tips (Over 2.5) — Showing {len(top)}")
 
-if show_all:
-    top = tips
-else:
-    # let the slider go up to the real total so the user can always include it
-    top_n = st.slider("How many tips to show?", 5, max(5, total_qualified), min(30, total_qualified))
-    top = tips.head(top_n)
-            st.success(f"SPM Tips (Over 2.5) — Top {len(top)}")
-            display1 = top[["__row_id__", *show_cols]]  # keep row_id in table (hidden in UI via style)
+            # Keep row id internally; hide it in the UI table
+            if "__row_id__" in top.columns:
+                display1 = top[["__row_id__", *show_cols]].copy()
+            else:
+                # Fallback if __row_id__ wasn't added earlier for some reason
+                display1 = top[show_cols].copy()
+
             out1 = display1.drop(columns=["__row_id__"], errors="ignore")
+
+            # Styled table (WIN/LOSE coloring if FT exists)
             if col_ft:
-                styler1 = out1.style.apply(make_outcome_row_colorizer("Over 2.5", col_ft), axis=1).format(FORMAT_MAP, na_rep="")
+                styler1 = out1.style.apply(
+                    make_outcome_row_colorizer("Over 2.5", col_ft), axis=1
+                ).format(FORMAT_MAP, na_rep="")
                 st.dataframe(styler1, use_container_width=True, height=500)
             else:
-                st.dataframe(out1.style.format(FORMAT_MAP, na_rep=""), use_container_width=True, height=500)
+                st.dataframe(
+                    out1.style.format(FORMAT_MAP, na_rep=""),
+                    use_container_width=True, height=500
+                )
 
+            # Small performance summary for this tab
             n, wins, losses, strike = summarize_picks(display1, df, "Over 2.5")
-            show_summary(n, wins, losses, strike, key_prefix="t1")
+            show_summary(n, wins, losses, strike)
 
+            # Per‑tab CSV
             csv1 = out1.to_csv(index=False).encode("utf-8")
-            st.download_button("📥 Download Over 2.5 SPM Tips (CSV)", data=csv1,
-                               file_name="SPM_Tips_Over25.csv", mime="text/csv",
-                               key="dl_over25_csv_t1")
+            st.download_button(
+                "📥 Download Over 2.5 SPM Tips (CSV)",
+                data=csv1,
+                file_name="SPM_Tips_Over25.csv",
+                mime="text/csv",
+                key="dl_over25_csv_t1",
+            )
 
-            # Save with row_id for combined/summary later
+            # Save for combined download later
             st.session_state["tips_over25"] = display1.assign(Strategy="Over 2.5")
-
 # --------------------------------------------------------------------
 # TAB 2 — Home Fav
 # --------------------------------------------------------------------
