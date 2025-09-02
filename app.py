@@ -428,7 +428,7 @@ with tab2:
         mask = (
             (work2["HomeOdds"].between(2.00, 4.00, inclusive="both") if col_home_odds else True) &
             (work2["HomeGames_BU"] > 10) &
-            (work2["Attack_CE"] >= 60.0) &
+            (work2["Attack_CE"] >= 70.0) &
             (work2["WinsGame_CO"] >= 60.0)
         )
         tips2 = work2.loc[mask].copy()
@@ -447,7 +447,7 @@ with tab2:
             st.warning("No matches met the Home Fav rules.")
         else:
             tips2 = tips2.sort_values(["WinsGame_CO", "Attack_CE", "HomeGames_BU"], ascending=[False, False, False]).reset_index(drop=True)
-            top2 = tips2.head(10)
+            top2 = tips2.head(20)
 
             st.success(f"SPM Tips (Home Fav) — Top {len(top2)}")
             display2 = top2[["__row_id__", *show2]]
