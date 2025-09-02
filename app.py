@@ -404,7 +404,8 @@ with tab1:
 # --------------------------------------------------------------------
 with tab2:
     st.subheader("Home Fav Tips (Strategy2)")
-
+    # AI engine upgraded note
+    st.caption("🤖 AI engine upgraded on 1st September 2025 for more accurate results.")
     col_home_odds = pick_col(df, ["Home Back(T0)", "Home Odds", "Home Back(TO)", "Home Back"])
     IDX_BU = excel_col_to_idx("BU")
     IDX_CE = excel_col_to_idx("CE")
