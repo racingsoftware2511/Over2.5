@@ -280,12 +280,15 @@ tab1, tab2, tab3, tab4, tab5 = st.tabs([
 with tab1:
     st.subheader("Over 2.5 Tips (Strategy 1)")
 
+    # AI engine upgraded note
+    st.caption("🤖 AI engine upgraded on 1st September 2025 for more accurate results.")
+
     # Excel column indices we need
     IDX_Z  = excel_col_to_idx("Z")   # Over 2.5 odds
     IDX_BP = excel_col_to_idx("BP")  # Combined GS
     IDX_BQ = excel_col_to_idx("BQ")  # Combined 2.5 (%-like)
-    IDX_CE = excel_col_to_idx("CE")  # Attacking (Home) share 0–100
-    IDX_CF = excel_col_to_idx("CF")  # Attacking (Away) share 0–100
+    IDX_CE = excel_col_to_idx("CE")  # Attacking (Home)
+    IDX_CF = excel_col_to_idx("CF")  # Attacking (Away)
     IDX_K  = excel_col_to_idx("K")   # Home odds (Home Back(T0))
 
     needed_max = max(IDX_Z, IDX_BP, IDX_BQ, IDX_CE, IDX_CF, IDX_K)
@@ -304,74 +307,30 @@ with tab1:
         work = df.copy()
         work["O25_odds_Z"]     = to_num(work[col_Z])
         work["CombinedGS_BP"]  = to_num(work[col_BP])
-        work["Combined25_BQ"]  = normalize_pct(work[col_BQ])  # normalize to [0..100]
-        work["Attack_H_CE"]    = to_num(work[col_CE])          # 0–100 shares
-        work["Attack_A_CF"]    = to_num(work[col_CF])          # 0–100 shares
+        work["Combined25_BQ"]  = normalize_pct(work[col_BQ])
+        work["Attack_H_CE"]    = to_num(work[col_CE])
+        work["Attack_A_CF"]    = to_num(work[col_CF])
         work["HomeOdds_K"]     = to_num(work[col_K])
 
         work = add_kickoff(work, col_date, col_time)
 
-        # -------- Rules (exactly as requested) --------
-        rule_odds      = work["O25_odds_Z"].between(1.40, 3.00, inclusive="both")
-        rule_gs        = work["CombinedGS_BP"] >= 3.5
-        rule_bq        = work["Combined25_BQ"] >= 70.0
-        rule_attack    = (work["Attack_H_CE"] >= 35.0) & (work["Attack_A_CF"] >= 35.0)
-        rule_homeodds  = work["HomeOdds_K"] <= 2.00
-
-        # For transparency: create a reason if a match fails
-        work["why_not"] = np.select(
-            [
-                work["O25_odds_Z"].isna() | ~rule_odds,
-                work["CombinedGS_BP"].isna() | ~rule_gs,
-                work["Combined25_BQ"].isna() | ~rule_bq,
-                work["Attack_H_CE"].isna() | work["Attack_A_CF"].isna() | ~rule_attack,
-                work["HomeOdds_K"].isna() | ~rule_homeodds,
-            ],
-            [
-                "O25(Z) not 1.40–3.00",
-                "Combined GS (BP) < 3.5",
-                "Combined 2.5 (BQ) < 70",
-                "CE or CF < 35",
-                "Home odds (K) > 2.00",
-            ],
-            default="OK",
+        # -------- Rules --------
+        filt = (
+            work["O25_odds_Z"].between(1.40, 3.00, inclusive="both")
+            & (work["CombinedGS_BP"] >= 3.5)
+            & (work["Combined25_BQ"] >= 70.0)
+            & (work["Attack_H_CE"] >= 35.0)
+            & (work["Attack_A_CF"] >= 35.0)
+            & (work["HomeOdds_K"] <= 2.00)
         )
-
-        filt = rule_odds & rule_gs & rule_bq & rule_attack & rule_homeodds
         tips = work.loc[filt].copy()
-
-        # Quick probe tool to diagnose a specific game
-        with st.expander("🔎 Why didn’t a specific match qualify?"):
-            q = st.text_input("Type part of a team name (e.g., 'Philadelphia' or 'Chicago')", "")
-            if q.strip():
-                probe = work[
-                    work[col_home].astype(str).str.contains(q, case=False, na=False) |
-                    work[col_away].astype(str).str.contains(q, case=False, na=False)
-                ][
-                    [col_home, col_away, "O25_odds_Z", "CombinedGS_BP", "Combined25_BQ",
-                     "Attack_H_CE", "Attack_A_CF", "HomeOdds_K", "why_not"]
-                ].copy()
-                if probe.empty:
-                    st.info("No rows matched that text.")
-                else:
-                    st.dataframe(
-                        probe.style.format({
-                            "O25_odds_Z": "{:.2f}",
-                            "CombinedGS_BP": "{:.2f}",
-                            "Combined25_BQ": "{:.1f}",
-                            "Attack_H_CE": "{:.0f}",
-                            "Attack_A_CF": "{:.0f}",
-                            "HomeOdds_K": "{:.2f}",
-                        }),
-                        use_container_width=True
-                    )
 
         # Summary / UI controls
         total_qualified = int(len(tips))
         st.caption(f"✅ {total_qualified} matches meet Strategy 1 rules.")
         show_all = st.toggle("Show all qualified matches", value=False, key="t1_show_all")
 
-        # Sort strongest first (higher BQ & GS; cheaper home odds first)
+        # Sort strongest first
         tips = tips.sort_values(
             ["Combined25_BQ", "CombinedGS_BP", "HomeOdds_K"],
             ascending=[False, False, True]
@@ -407,7 +366,7 @@ with tab1:
         if top.empty:
             st.warning("No matches met the Strategy 1 rules.")
         else:
-            st.success(f"SPM Tips — Showing {len(top)}")
+            st.success(f"SPM Tips (Over 2.5) — Showing {len(top)}")
 
             # Keep row id internally; hide it in the UI table
             display1 = top[["__row_id__", *show_cols]].copy() if "__row_id__" in top.columns else top[show_cols].copy()
@@ -424,7 +383,7 @@ with tab1:
             else:
                 st.dataframe(out1.style.format(FORMAT_MAP, na_rep=""), use_container_width=True, height=500)
 
-            # Small performance summary for this tab
+            # Performance summary
             n, wins, losses, strike = summarize_picks(display1, df, "Over 2.5")
             show_summary(n, wins, losses, strike)
 
