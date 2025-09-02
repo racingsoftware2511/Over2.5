@@ -568,7 +568,8 @@ with tab3:
 # --------------------------------------------------------------------
 with tab4:
     st.subheader("Lay the Draw (Strategy4)")
-
+    # AI engine upgraded note
+    st.caption("🤖 AI engine upgraded on 1st August 2025 for more accurate results.")
     IDX_CE = excel_col_to_idx("CE")  # Attack H
     IDX_CC = excel_col_to_idx("CC")  # Strength H
     IDX_P  = excel_col_to_idx("P")   # Draw odds
@@ -633,7 +634,8 @@ with tab4:
 # --------------------------------------------------------------------
 with tab5:
     st.subheader("Back the Away (Strategy5)")
-
+    # AI engine upgraded note
+    st.caption("🤖 AI engine upgraded on 1st September 2025 for more accurate results.")
     IDX_CF = excel_col_to_idx("CF")  # Attack A
     IDX_CG = excel_col_to_idx("CG")  # Defense H
     IDX_CP = excel_col_to_idx("CP")  # Wins A
