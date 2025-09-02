@@ -659,6 +659,7 @@ with tab5:
             (w["Attack_A_CF"] >= 60.0) &
             (w["Defense_H_CG"] <= 40.0) &
             (w["Wins_A_CP"] >= 70.0)
+            (w["AwayOdds_M"] <= 4.0)
         )
         backaway = w.loc[filt].copy()
 
