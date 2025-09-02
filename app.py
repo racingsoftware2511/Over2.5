@@ -467,42 +467,51 @@ with tab2:
                                key="dl_homefav_csv_t2")
 
             st.session_state["tips_homefav"] = display2.assign(Strategy="Home Fav")
-
 # --------------------------------------------------------------------
-# TAB 3 — Over 2.5 (signed Poisson gap)
+# TAB 3 — Over 2.5 (signed Poisson gap) — UPDATED RULES
 # --------------------------------------------------------------------
 with tab3:
     st.subheader("Over 2.5 (Strategy3)")
 
+    # Needed Excel columns
     IDX_Z  = excel_col_to_idx("Z")   # O2.5 odds
     IDX_BP = excel_col_to_idx("BP")  # Combined GS
     IDX_CI = excel_col_to_idx("CI")  # Poisson H share
     IDX_CJ = excel_col_to_idx("CJ")  # Poisson A share
+    IDX_K  = excel_col_to_idx("K")   # Home Back(T0) odds (column K)
 
-    needed_max = max(IDX_Z, IDX_BP, IDX_CI, IDX_CJ)
+    needed_max = max(IDX_Z, IDX_BP, IDX_CI, IDX_CJ, IDX_K)
     if len(df.columns) <= needed_max:
-        st.error("Not enough columns for Z / BP / CI / CJ.")
+        st.error("Not enough columns for Z / BP / CI / CJ / K.")
     else:
         col_Z  = df.columns[IDX_Z]
         col_BP = df.columns[IDX_BP]
         col_CI = df.columns[IDX_CI]
         col_CJ = df.columns[IDX_CJ]
+        col_K  = df.columns[IDX_K]   # Home Back(T0)
 
         w = df.copy()
         w["O25_odds_Z"]     = to_num(w[col_Z])
         w["CombinedGS_BP"]  = to_num(w[col_BP])
         w["poi_h_CI"]       = to_num(w[col_CI])
         w["poi_a_CJ"]       = to_num(w[col_CJ])
+        w["HomeBack_K"]     = to_num(w[col_K])     # home odds from column K
+
+        # SIGNED gap: CJ - CI (can be positive or negative)
         w["poi_gap_signed"] = w["poi_a_CJ"] - w["poi_h_CI"]
+
         w = add_kickoff(w, col_date, col_time)
 
+        # ===== RULES (updated) =====
         filt = (
             w["O25_odds_Z"].between(1.40, 3.00, inclusive="both") &
             ((w["poi_gap_signed"] >= 20.0) | (w["poi_gap_signed"] <= -20.0)) &
-            (w["CombinedGS_BP"] >= 3.0)
+            (w["CombinedGS_BP"] >= 3.5) &
+            (w["HomeBack_K"] <= 2.00)
         )
         tips3 = w.loc[filt].copy()
 
+        # Columns to show
         show3 = []
         if col_country: show3.append(col_country)
         show3 += ["Kickoff"]
@@ -510,22 +519,35 @@ with tab3:
         if col_ft: show3.append(col_ft)
         if col_home: show3.append(col_home)
         if col_away: show3.append(col_away)
-        show3 += ["O25_odds_Z", "CombinedGS_BP", "poi_h_CI", "poi_a_CJ", "poi_gap_signed"]
+        show3 += [
+            "O25_odds_Z", "CombinedGS_BP", "HomeBack_K",
+            "poi_h_CI", "poi_a_CJ", "poi_gap_signed"
+        ]
 
         if tips3.empty:
             st.warning("No matches met the Over 2.5 (signed Poisson gap) rules.")
         else:
-            tips3 = tips3.sort_values(["CombinedGS_BP", "poi_gap_signed"], ascending=[False, False]).reset_index(drop=True)
-            top3 = tips3.head(20)
+            # Sort strongest first: higher CombinedGS, then larger absolute gap
+            tips3["abs_gap"] = tips3["poi_gap_signed"].abs()
+            tips3 = tips3.sort_values(
+                ["CombinedGS_BP", "abs_gap", "poi_gap_signed"],
+                ascending=[False, False, False]
+            ).reset_index(drop=True)
+
+            top3 = tips3.head(20)  # keep as-is; raise/remove if you want more
 
             st.success(f"Over 2.5 (signed gap) — {len(top3)} picks")
-            display3 = top3[["__row_id__", *show3]]
+            display3 = top3[["__row_id__", *show3]] if "__row_id__" in top3.columns else top3[show3]
             out3 = display3.drop(columns=["__row_id__"], errors="ignore")
+
             if col_ft:
-                styler3 = out3.style.apply(make_outcome_row_colorizer("Over 2.5", col_ft), axis=1).format(FORMAT_MAP, na_rep="")
+                styler3 = out3.style.apply(
+                    make_outcome_row_colorizer("Over 2.5", col_ft), axis=1
+                ).format(FORMAT_MAP, na_rep="")
                 st.dataframe(styler3, use_container_width=True, height=500)
             else:
-                st.dataframe(out3.style.format(FORMAT_MAP, na_rep=""), use_container_width=True, height=500)
+                st.dataframe(out3.style.format(FORMAT_MAP, na_rep=""),
+                             use_container_width=True, height=500)
 
             n, wins, losses, strike = summarize_picks(display3, df, "Over 2.5")
             show_summary(n, wins, losses, strike, key_prefix="t3")
@@ -535,7 +557,9 @@ with tab3:
                                file_name="SPM_Over25_signed_gap.csv", mime="text/csv",
                                key="dl_over25_signed_t3")
 
-            st.session_state["tips_over25_gap"] = display3.assign(Strategy="Over 2.5 (Z/BP/signed gap)")
+            st.session_state["tips_over25_gap"] = display3.assign(
+                Strategy="Over 2.5 (Z/BP/signed gap)"
+            )
 
 # --------------------------------------------------------------------
 # TAB 4 — Lay the Draw (updated rules)
