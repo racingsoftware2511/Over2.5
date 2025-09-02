@@ -472,7 +472,8 @@ with tab2:
 # --------------------------------------------------------------------
 with tab3:
     st.subheader("Over 2.5 (Strategy3)")
-
+    # AI engine upgraded note
+    st.caption("🤖 AI engine upgraded on 1st September 2025 for more accurate results.")
     # Needed Excel columns
     IDX_Z  = excel_col_to_idx("Z")   # O2.5 odds
     IDX_BP = excel_col_to_idx("BP")  # Combined GS
