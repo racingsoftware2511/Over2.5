@@ -53,18 +53,15 @@ st.markdown(
 )
 st.write("Upload your SPM Excel and pick a strategy to generate tips.")
 # =========================
-# =========================
 # Helpers
 # =========================
 def excel_col_to_idx(col_letters: str) -> int:
-    """Excel letters -> 0-based index (e.g., A->0, Z->25, AA->26)."""
     s = 0
     for ch in col_letters.upper():
         s = s * 26 + (ord(ch) - 64)
     return s - 1
 
 def pick_col(df, candidates):
-    """Return the first matching column (case-insensitive) from a list of names."""
     lower = {c.lower(): c for c in df.columns}
     for c in candidates:
         if c.lower() in lower:
@@ -87,17 +84,12 @@ def add_kickoff(frame, col_date, col_time):
 def normalize_pct(series: pd.Series) -> pd.Series:
     """Force values to [0,100] as % (accept 0–1, 0–100, or 0–10000)."""
     s = pd.to_numeric(series, errors="coerce")
-
     def fix(v):
-        if pd.isna(v):
-            return v
+        if pd.isna(v): return v
         v = float(v)
-        if v <= 1.0:           # proportions like 0.76 -> 76
-            v *= 100.0
-        while v > 100.0:       # scale down 7550 -> 755 -> 75.5
-            v /= 10.0
+        if v <= 1.0: v *= 100.0
+        while v > 100.0: v /= 10.0
         return v
-
     return s.map(fix)
 
 # --- Pretty number formats for UI tables (no effect on CSV files) ---
@@ -189,22 +181,21 @@ def summarize_picks(picks: pd.DataFrame, df: pd.DataFrame, strategy: str):
     if "__row_id__" not in picks.columns or "__row_id__" not in df.columns:
         return n, None, None, None
 
-    # Try to find a score column first
+    # Try to find a *score* column (2-1 style) in the source DF
     ft_score_col = pick_col(df, [
         "Final Score", "FT", "Full-Time", "Full Time",
         "Full-Time Score", "Full Time Score", "FT Score"
     ])
     if ft_score_col is None:
-        # Fall back to total-goals column (usable for Over 2.5 only)
+        # Try the "goals total" column as a fallback (less ideal for Over 2.5 only)
         ft_goals_col = pick_col(df, [
             "FT Goals", "Total Goals FT", "Goals FT", "Final Goals", "Full Time Goals"
         ])
         if ft_goals_col is None:
             return n, None, None, None
-
         base = df[["__row_id__", ft_goals_col]].copy()
         j = picks.merge(base, on="__row_id__", how="left", suffixes=("", "_res"))
-
+        # Only Over 2.5 can be evaluated from total goals
         if strategy.startswith("Over 2.5"):
             win_mask = pd.to_numeric(j[ft_goals_col], errors="coerce").fillna(-1) >= 3
             wins = int(win_mask.sum())
@@ -214,10 +205,11 @@ def summarize_picks(picks: pd.DataFrame, df: pd.DataFrame, strategy: str):
         else:
             return n, None, None, None
 
-    # Preferred: use the FT score string with decide_outcome
+    # Preferred path: use FT *score string* and evaluate with decide_outcome
     base = df[["__row_id__", ft_score_col]].copy()
     j = picks.merge(base, on="__row_id__", how="left", suffixes=("", "_res"))
 
+    # Per-row strategy when summarizing the *combined* table
     if strategy == "mixed" and "Strategy" in j.columns:
         strat_series = j["Strategy"].astype(str)
     else:
@@ -234,6 +226,14 @@ def summarize_picks(picks: pd.DataFrame, df: pd.DataFrame, strategy: str):
     losses = int((outcomes == "LOSE").sum())
     strike = wins / n * 100.0 if n else 0.0
     return n, wins, losses, strike
+
+def show_summary(n, wins, losses, strike, key_prefix="sum"):
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Tips", n if n is not None else "N/A")
+    c2.metric("Wins", wins if wins is not None else "N/A")
+    c3.metric("Losses", losses if losses is not None else "N/A")
+    c4.metric("Win %", f"{strike:.1f}%" if strike is not None else "N/A")
+
 # =========================
 # Upload
 # =========================
@@ -702,17 +702,6 @@ with tab5:
 # =========================
 # Combined Download
 # =========================
-# --- Combined metrics: count only explicit WIN/LOSE, ignore unknowns ---
-tips_all = len(combined)
-wins_all = int((combined["Outcome"] == "WIN").sum())
-losses_all = int((combined["Outcome"] == "LOSE").sum())
-decided = wins_all + losses_all
-
-c1, c2, c3, c4 = st.columns(4)
-c1.metric("Tips", tips_all)
-c2.metric("Wins", wins_all)
-c3.metric("Losses", losses_all)
-c4.metric("Win %", f"{(wins_all/decided*100):.1f}%" if decided > 0 else "N/A")
 st.markdown("---")
 st.subheader("📦 Download All SPM Tips (Combined)")
 
