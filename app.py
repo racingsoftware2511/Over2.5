@@ -227,12 +227,18 @@ def summarize_picks(picks: pd.DataFrame, df: pd.DataFrame, strategy: str):
     strike = wins / n * 100.0 if n else 0.0
     return n, wins, losses, strike
 
-def show_summary(n, wins, losses, strike, key_prefix="sum"):
-    c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Tips", n if n is not None else "N/A")
-    c2.metric("Wins", wins if wins is not None else "N/A")
-    c3.metric("Losses", losses if losses is not None else "N/A")
-    c4.metric("Win %", f"{strike:.1f}%" if strike is not None else "N/A")
+    # --- Combined metrics: count only explicit WIN/LOSE, ignore unknowns ---
+    tips_all = len(combined)
+    wins_all = int((combined["Outcome"] == "WIN").sum())
+    losses_all = int((combined["Outcome"] == "LOSE").sum())
+    decided = wins_all + losses_all
+
+    # Show the four counters
+   c1, c2, c3, c4 = st.columns(4)
+   c1.metric("Tips", tips_all)
+   c2.metric("Wins", wins_all)
+   c3.metric("Losses", losses_all)
+   c4.metric("Win %", f"{(wins_all/decided*100):.1f}%" if decided > 0 else "N/A")
 
 # =========================
 # Upload
