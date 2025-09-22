@@ -600,7 +600,7 @@ with tab4:
         filt = (
             (w["Attack_H_CE"]   >= 70.0) &
             (w["Strength_H_CC"] >= 70.0) &
-            (w["DrawOdds_P"]    <  4.0)  &
+            (w["DrawOdds_P"]    <=  4.0)  &
             (w["AbsStrengthGap"] >= 50.0)          # NEW rule: |CC - CD| ≥ 50
         )
         ltd = w.loc[filt].copy()
