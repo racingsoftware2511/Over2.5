@@ -564,34 +564,44 @@ with tab3:
             )
 
 # --------------------------------------------------------------------
-# TAB 4 — Lay the Draw (updated rules)
+# TAB 4 — Lay the Draw (updated rules + StrengthGap)
 # --------------------------------------------------------------------
 with tab4:
     st.subheader("Lay the Draw (Strategy4)")
     # AI engine upgraded note
     st.caption("🤖 AI engine upgraded on 1st August 2025 for more accurate results.")
-    IDX_CE = excel_col_to_idx("CE")  # Attack H
-    IDX_CC = excel_col_to_idx("CC")  # Strength H
+
+    # Excel letters
+    IDX_CE = excel_col_to_idx("CE")  # Attacking Potential (Home)
+    IDX_CC = excel_col_to_idx("CC")  # Strength (Home)
+    IDX_CD = excel_col_to_idx("CD")  # Strength (Away)  <-- NEW
     IDX_P  = excel_col_to_idx("P")   # Draw odds
 
-    needed_max = max(IDX_CE, IDX_CC, IDX_P)
+    needed_max = max(IDX_CE, IDX_CC, IDX_CD, IDX_P)
     if len(df.columns) <= needed_max:
-        st.error("Not enough columns for CE / CC / P.")
+        st.error("Not enough columns for CE / CC / CD / P.")
     else:
         col_CE = df.columns[IDX_CE]
         col_CC = df.columns[IDX_CC]
+        col_CD = df.columns[IDX_CD]
         col_P  = df.columns[IDX_P]
 
         w = df.copy()
-        w["Attack_H_CE"]   = to_num(w[col_CE])
-        w["Strength_H_CC"] = to_num(w[col_CC])
-        w["DrawOdds_P"]    = to_num(w[col_P])
+        w["Attack_H_CE"]    = to_num(w[col_CE])
+        w["Strength_H_CC"]  = to_num(w[col_CC])
+        w["Strength_A_CD"]  = to_num(w[col_CD])                # NEW
+        w["DrawOdds_P"]     = to_num(w[col_P])
+        w["StrengthGap"]    = w["Strength_H_CC"] - w["Strength_A_CD"]   # NEW
+        w["AbsStrengthGap"] = w["StrengthGap"].abs()                     # helper for rule/sort
+
         w = add_kickoff(w, col_date, col_time)
 
+        # Existing rules + NEW strength-gap rule
         filt = (
-            (w["Attack_H_CE"] >= 70.0) &
+            (w["Attack_H_CE"]   >= 70.0) &
             (w["Strength_H_CC"] >= 70.0) &
-            (w["DrawOdds_P"] < 4.0)
+            (w["DrawOdds_P"]    <  4.0)  &
+            (w["AbsStrengthGap"] >= 50.0)          # NEW rule: |CC - CD| ≥ 50
         )
         ltd = w.loc[filt].copy()
 
@@ -602,22 +612,31 @@ with tab4:
         if col_ft: show4.append(col_ft)
         if col_home: show4.append(col_home)
         if col_away: show4.append(col_away)
-        show4 += ["DrawOdds_P", "Attack_H_CE", "Strength_H_CC"]
+        show4 += ["DrawOdds_P", "Attack_H_CE", "Strength_H_CC", "Strength_A_CD", "StrengthGap"]  # NEW columns shown
 
         if ltd.empty:
-            st.warning("No matches met the Lay the Draw rules.")
+            st.warning("No matches met the Lay the Draw rules (including strength gap).")
         else:
-            ltd = ltd.sort_values(["DrawOdds_P", "Attack_H_CE", "Strength_H_CC"], ascending=[True, False, False]).reset_index(drop=True)
+            # Prioritize cheaper lays, stronger home metrics, then bigger gap
+            ltd = ltd.sort_values(
+                ["DrawOdds_P", "Attack_H_CE", "Strength_H_CC", "AbsStrengthGap"],
+                ascending=[True,        False,         False,            False]
+            ).reset_index(drop=True)
+
             top4 = ltd.head(20)
 
             st.success(f"Lay the Draw — {len(top4)} picks")
-            display4 = top4[["__row_id__", *show4]]
+            display4 = top4[["__row_id__", *show4]] if "__row_id__" in top4.columns else top4[show4]
             out4 = display4.drop(columns=["__row_id__"], errors="ignore")
+
             if col_ft:
-                styler4 = out4.style.apply(make_outcome_row_colorizer("Lay the Draw", col_ft), axis=1).format(FORMAT_MAP, na_rep="")
+                styler4 = out4.style.apply(
+                    make_outcome_row_colorizer("Lay the Draw", col_ft), axis=1
+                ).format(FORMAT_MAP, na_rep="")
                 st.dataframe(styler4, use_container_width=True, height=500)
             else:
-                st.dataframe(out4.style.format(FORMAT_MAP, na_rep=""), use_container_width=True, height=500)
+                st.dataframe(out4.style.format(FORMAT_MAP, na_rep=""),
+                             use_container_width=True, height=500)
 
             n, wins, losses, strike = summarize_picks(display4, df, "Lay the Draw")
             show_summary(n, wins, losses, strike, key_prefix="t4")
@@ -628,7 +647,6 @@ with tab4:
                                key="dl_ltd_csv_t4")
 
             st.session_state["tips_lay_draw"] = display4.assign(Strategy="Lay the Draw")
-
 # --------------------------------------------------------------------
 # TAB 5 — Back the Away (updated rules incl. away odds any)
 # --------------------------------------------------------------------
